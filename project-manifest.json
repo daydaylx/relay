@@ -1,0 +1,23 @@
+{
+  "project": "Relay",
+  "subtitle": "NixOS-first System Control Layer",
+  "version": "planning-v2",
+  "date": "2026-10-02",
+  "runtime_strategy": "standalone system tool; no Pi",
+  "target": "NixOS 26.05 first",
+  "config_backend_v1": "flake",
+  "ai": "optional",
+  "implementation_language_recommendation": "Rust",
+  "repository_setup_included": true,
+  "agent_instructions": "AGENTS.md",
+  "target_states": "T0-T6",
+  "repo_files": [
+    "AGENTS.md",
+    "PROJECT_STATUS.md",
+    "CONTRIBUTING.md",
+    ".gitignore",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/ISSUE_TEMPLATE/feature_request.yml"
+  ]
+}

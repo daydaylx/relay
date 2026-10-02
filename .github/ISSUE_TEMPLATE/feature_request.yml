@@ -1,0 +1,30 @@
+name: Feature request
+description: Neue Relay-Funktion vorschlagen
+title: "[Feature] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Ziel
+      description: Welches Nutzer-/Systemproblem soll gelöst werden?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Frühester Zielzustand
+      options:
+        - T0
+        - T1
+        - T2
+        - T3
+        - T4
+        - T5
+        - T6

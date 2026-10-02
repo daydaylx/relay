@@ -1,0 +1,40 @@
+{
+  "profiles": {
+    "format": {
+      "program": "cargo",
+      "args": ["fmt", "--all", "--", "--check"],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "classification": "required",
+      "required": true,
+      "trustRequired": true
+    },
+    "clippy": {
+      "program": "cargo",
+      "args": ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "classification": "required",
+      "required": true,
+      "trustRequired": true
+    },
+    "tests": {
+      "program": "cargo",
+      "args": ["test", "--workspace"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "classification": "required",
+      "required": true,
+      "trustRequired": true
+    },
+    "build": {
+      "program": "cargo",
+      "args": ["build", "--workspace", "--release"],
+      "cwd": ".",
+      "timeoutMs": 300000,
+      "classification": "required",
+      "required": true,
+      "trustRequired": true
+    }
+  }
+}

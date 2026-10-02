@@ -1,0 +1,36 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Relay runtime/dev state
+/.relay-dev/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment / credentials
+.env
+.env.*
+!.env.example
+*.token
+*.secret
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+
+# Temporary candidate/build artifacts
+/tmp/
+.candidates/
+.result
+result
+result-*
+
+# Logs
+*.log
+/logs/

@@ -1,0 +1,34 @@
+name: Bug report
+description: Relay-Verhalten funktioniert nicht wie vorgesehen
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwarteter Zustand
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächlicher Zustand
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Bereich
+      options:
+        - Read-only
+        - Candidate
+        - Activation
+        - Recovery
+        - AI
+        - UI

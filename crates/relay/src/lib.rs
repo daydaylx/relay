@@ -2,10 +2,50 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+mod ai;
+mod change;
+mod engine;
+mod exec;
+mod fsutil;
+mod health;
+mod host;
+mod hypr;
 mod index;
-pub use index::SearchIndex;
+mod intent;
+mod journal;
+mod json;
+mod nix;
+mod sha256;
+mod source;
+mod state;
+pub use ai::{
+    Api, AskError, CommandProvider, Hints, HttpProvider, Prompt, Provider, Resolved,
+    build_explain_prompt, build_prompt, clip, collect_hints, extract_json_object, propose,
+    validate_request, verify_changes,
+};
+pub use change::{
+    Change, ManagedState, Risk, Value, classify as classify_changes, parse_managed,
+    render as render_managed, render_state, render_with_packages as render_managed_with_packages,
+    validate as validate_change,
+};
+pub use engine::{
+    ApplyOutcome, ApplyReport, Confirmation, Engine, InitReport, PlanOutcome, RecoverEntry,
+};
+pub use exec::{Invocation, Outcome, ProcessRunner, Runner};
+pub use health::{HealthPolicy, HealthReport, HealthSnapshot, NixosVersion, SystemAdapter};
+pub use host::{Evidence, Host, compare_systems};
+pub use hypr::{
+    DesktopProbe, DesktopSnapshot, DesktopSummary, HyprlandIpc, MonitorInfo, WorkspaceInfo,
+    desktop_problems,
+};
+pub use index::{IndexEntry, SearchIndex};
+pub use intent::{Action, Proposal, parse_intent, parse_proposal};
+pub use journal::{ChangeState, Journal, JournalEntry};
+pub use nix::{Activation, BuildResult, FlakeSource, IndexKind, NixAdapter, NixError};
+pub use source::{MANAGED_RELATIVE_PATH, SourceTree};
+pub use state::{PlanRecord, StateDir};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct SystemSummary {
     pub hostname: Option<String>,
     pub os_name: Option<String>,
@@ -18,6 +58,15 @@ pub struct SystemSummary {
     pub nixpkgs_revision: Option<String>,
     pub failed_units: Option<Vec<String>>,
     pub desktop_session: Option<String>,
+    /// Flake revision baked into the running system (`null` for a dirty working tree).
+    pub configuration_revision: Option<String>,
+    /// `in-sync`, `diverged` or `unpublished`: the running system'"'"'s /etc/relay/managed.nix
+    /// compared with `relay/managed.nix` of the given flake.
+    pub managed_module: Option<String>,
+    /// A Relay change that was interrupted or awaits a reboot (see `relay recover`).
+    pub unresolved_change: Option<String>,
+    /// Read-only Hyprland overview (monitors, workspaces, counts), live hosts only.
+    pub desktop: Option<DesktopSummary>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,7 +96,63 @@ pub fn system_summary(root: &Path) -> SystemSummary {
         // Do not infer health or desktop state from incomplete fixture/root data.
         failed_units: None,
         desktop_session: None,
+        configuration_revision: None,
+        managed_module: None,
+        unresolved_change: None,
+        desktop: None,
     }
+}
+
+/// `system_summary` plus the sources that only exist on a live machine. A fixture `root`
+/// never consults the running system, so unavailable fields stay `None` rather than guessed.
+pub fn system_summary_live(
+    root: &Path,
+    runner: &std::sync::Arc<dyn Runner>,
+    flake: Option<&Path>,
+    state: Option<&StateDir>,
+) -> SystemSummary {
+    let mut summary = system_summary(root);
+    if root == Path::new("/") {
+        let system = SystemAdapter::new(std::sync::Arc::clone(runner));
+        if let Ok(version) = system.nixos_version() {
+            summary.nixpkgs_revision = version.nixpkgs_revision;
+            summary.configuration_revision = version.configuration_revision;
+        }
+        if let Ok(units) = system.unhealthy_units() {
+            summary.failed_units = Some(units.into_iter().collect());
+        }
+        let session = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE"]
+            .iter()
+            .filter_map(|key| std::env::var(key).ok().filter(|value| !value.is_empty()))
+            .collect::<Vec<_>>();
+        if !session.is_empty() {
+            summary.desktop_session = Some(session.join(":"));
+        }
+        summary.desktop = HyprlandIpc::from_env(&|key| std::env::var(key).ok())
+            .and_then(|ipc| ipc.summary().ok());
+    }
+    if let Some(flake) = flake {
+        if let Ok(tree) = SourceTree::scan(flake, runner.as_ref()) {
+            summary.config_identity = tree.hash().ok().map(|hash| format!("sha256:{hash}"));
+            let live = std::fs::read(tree.root().join(MANAGED_RELATIVE_PATH)).ok();
+            summary.managed_module = live.map(|live| {
+                match Host::new(root).runtime_managed_module() {
+                    Some(runtime) if runtime == live => "in-sync",
+                    Some(_) => "diverged",
+                    None => "unpublished",
+                }
+                .to_owned()
+            });
+        }
+    }
+    let journal = state.map(|state| state.journal().entries());
+    if let Some(Ok(entries)) = journal {
+        summary.unresolved_change = entries
+            .values()
+            .find(|entry| entry.state.is_in_flight())
+            .map(|entry| entry.id.clone());
+    }
+    summary
 }
 
 pub fn generations(root: &Path) -> io::Result<Vec<Generation>> {
@@ -127,6 +232,11 @@ fn read_link_string(path: &Path) -> Option<String> {
         path.parent()?.join(target)
     };
     Some(resolved.to_string_lossy().into_owned())
+}
+
+/// Atomically replace a world-readable file (used for regenerable caches such as indexes).
+pub fn write_atomic_file(path: &Path, contents: &[u8]) -> Result<(), String> {
+    fsutil::write_atomic(path, contents, 0o644)
 }
 
 pub fn json_string(value: &str) -> String {

@@ -23,30 +23,76 @@ Ziel:
 
 ## MVP
 
-Relay V1 soll zuverlässig können:
+Relay V1 kann zuverlässig:
 
-1. Systemzustand anzeigen.
-2. NixOS-Optionen lokal durchsuchen.
-3. einfache Optionen kontrolliert setzen.
-4. Pakete hinzufügen/entfernen.
-5. Kandidatenkonfiguration erzeugen.
-6. evaluieren und bauen.
-7. System-Closure vergleichen.
-8. `dry-activate` auswerten.
-9. `test` + Health Check.
-10. `switch` bzw. `boot`.
-11. letzte Relay-Änderung rückgängig machen.
+1. Systemzustand anzeigen (`status`, `generations`, `health`).
+2. NixOS-Optionen und Pakete lokal durchsuchen (`index-*`, `search-*`).
+3. einfache Optionen kontrolliert setzen und Pakete hinzufügen/entfernen (`plan`).
+4. eine isolierte Kandidatenkonfiguration erzeugen, evaluieren und bauen.
+5. System-Closure vergleichen und Risiko klassifizieren.
+6. `dry-activate` als Preview auswerten.
+7. `test` + Health Check, dann `switch` bzw. `boot` (`apply`).
+8. die letzte Relay-Änderung rückgängig machen – Source und Runtime gemeinsam (`undo`).
+9. unterbrochene Änderungen nach einem Absturz erkennen und zurückrollen (`recover`).
+10. optional: Wünsche in natürlicher Sprache in geprüfte, typisierte Vorschläge übersetzen (`ask`).
+11. unter Hyprland Monitore, Workspaces und Kompositor-Gesundheit lesen und in die Sicherheitsprüfung einbeziehen (`desktop`).
 
-## Wichtige Grenze
+Relay schreibt automatisch nur in einen eigenen kontrollierten Bereich: `relay/managed.nix`.
+Geschützte Ressourcen (`system.stateVersion`, Bootloader, Dateisysteme, LUKS, Nix-Trust, Auth/SSH,
+Secrets, Datenbank-Major-Upgrades, …) werden im Code blockiert, nicht nur im Prompt.
 
-Relay soll nicht jede beliebige Nix-Datei automatisch umschreiben.
+## Schnellstart
 
-Der MVP schreibt nur in einen eigenen kontrollierten Bereich, z. B. `relay/managed.nix`.
+```sh
+nix develop                      # Rust-Toolchain (oder: nix run .# -- help)
+cargo build --release
 
+# einmalig: Managed-Modul anlegen und selbst importieren (Relay editiert keine anderen Dateien)
+relay init --flake /etc/nixos
+#   → ./relay/managed.nix in modules der Host-Konfiguration eintragen, `git add`, einmal
+#     `sudo nixos-rebuild switch --flake .#host` ausführen
 
-## Aktueller Implementierungsstand
+# planen: nichts am Live-System wird verändert
+relay plan --flake /etc/nixos --host nixos set-option hardware.bluetooth.enable bool true
+relay show <id>                  # Erklärung, Diff, Closure-Diff, Recovery-Plan
 
-Ein dependency-freies Rust-Workspace mit read-only `status` / `generations` sowie Suche in explizit bereitgestellten JSON-Indizes (`search-option` / `search-package`) liegt vor. Die Suche validiert das Index-Schema, aber nicht dessen Frische oder Identität zum laufenden Host; ein Generator ist noch nicht aktiviert. Details und Indexformat: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+# anwenden: dry-activate → test → Health → switch   (fragt nach Bestätigung)
+relay apply <id> --expect-active bluetooth.service
+
+relay undo                       # Source + Runtime zurück
+relay recover                    # nach Absturz/Stromausfall
+```
+
+Optional – natürliche Sprache (das Modell schlägt nur vor, Relay prüft, plant und fragt nach):
+
+```sh
+export RELAY_AI_PROVIDER=openai RELAY_AI_MODEL=gpt-4o-mini RELAY_AI_API_KEY_FILE=~/.config/relay/key
+relay ask "Aktiviere Bluetooth" --host nixos --flake /etc/nixos --explain --apply
+relay ask "Aktiviere Bluetooth" --host nixos --show-prompt   # zeigt, was gesendet würde; sendet nichts
+```
+
+Hyprland (nur lesend, in der Sitzung): `relay desktop status`, `relay desktop health`. Läuft eine
+Sitzung, prüft `apply` zusätzlich Monitore und Kompositor und rollt bei Schäden zurück.
+
+Beispiele und Ausgaben: [`examples/README.md`](examples/README.md). Entwicklung, Tests und
+Teststrategie: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
+## Aktueller Stand
+
+Die Zielzustände T1 (Observer), T2 (Candidate Builder), T3 (Activator), T4 (Recovery), T5
+(optionale KI-Schicht) und T6 (Hyprland, read-only) sind im Code umgesetzt und durch Simulator-Tests,
+echte Nix-Läufe, eine laufende Hyprland-Sitzung und einen NixOS-VM-Test belegt. Details und offene
+Punkte: [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+
+## Installation auf NixOS
+
+Die Flake baut Relay als Paket:
+
+```sh
+nix profile install /home/g/Projekte/Relay_NixOS_Project#default
+```
+
+Die Installation ändert nur das Benutzerprofil, nicht die Systemkonfiguration.
 
 ## Projektführung
 
@@ -60,5 +106,6 @@ Für die Umsetzung zuerst lesen:
 6. `docs/planning/06_REPO_SETUP.md`
 7. `docs/security/01_SECURITY_MODEL.md`
 8. `docs/security/02_RISK_REGISTER.md`
+9. `adr/` (insbesondere 0005 und 0006)
 
 Repo-Templates für Issues und Pull Requests liegen unter `.github/`.

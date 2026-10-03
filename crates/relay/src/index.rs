@@ -2,18 +2,19 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use crate::json::{Json, Parser, json_value};
 use crate::json_string;
 
 const INDEX_SCHEMA_VERSION: u64 = 1;
 
+/// A search hit as plain data (the JSON form is only for display).
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Json {
-    Null,
-    Bool(bool),
-    Number(String),
-    String(String),
-    Array(Vec<Json>),
-    Object(BTreeMap<String, Json>),
+pub struct IndexEntry {
+    pub name: String,
+    /// NixOS option type description (`None` for package entries).
+    pub type_name: Option<String>,
+    pub description: String,
+    pub read_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,7 +32,11 @@ impl SearchIndex {
     pub fn read(path: &Path, expected_kind: &str) -> Result<Self, String> {
         let contents = fs::read_to_string(path)
             .map_err(|error| format!("could not read index {}: {error}", path.display()))?;
-        let value = Parser::new(&contents).parse()?;
+        Self::from_json(&contents, expected_kind)
+    }
+
+    pub fn from_json(contents: &str, expected_kind: &str) -> Result<Self, String> {
+        let value = Parser::new(contents).parse()?;
         let root = object(&value, "index root")?;
         let schema_version = number(required(root, "schemaVersion")?, "schemaVersion")?;
         if schema_version != INDEX_SCHEMA_VERSION {
@@ -110,6 +115,69 @@ impl SearchIndex {
             .collect()
     }
 
+    /// The entry with exactly this name.
+    pub fn entry(&self, name: &str) -> Option<IndexEntry> {
+        self.entries
+            .iter()
+            .find(|entry| entry.get("name").and_then(Json::as_str) == Some(name))
+            .map(entry_summary)
+    }
+
+    /// Entries whose name contains `query` (case-insensitive), in index order.
+    pub fn find(&self, query: &str) -> Vec<IndexEntry> {
+        let query = query.to_lowercase();
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .get("name")
+                    .and_then(Json::as_str)
+                    .is_some_and(|name| name.to_lowercase().contains(&query))
+            })
+            .map(entry_summary)
+            .collect()
+    }
+
+    pub fn validate_host(&self, expected_host: &str) -> Result<(), String> {
+        if self.host != expected_host {
+            return Err(format!(
+                "index host '{}' does not match running host '{}'",
+                self.host, expected_host
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_identity(&self, current: &Self) -> Result<(), String> {
+        if self.kind != current.kind {
+            return Err("index kind does not match current source identity".into());
+        }
+        for (label, stored, now) in [
+            ("host", &self.host, &current.host),
+            (
+                "nixpkgs revision",
+                &self.nixpkgs_revision,
+                &current.nixpkgs_revision,
+            ),
+            (
+                "flake.lock hash",
+                &self.lockfile_hash,
+                &current.lockfile_hash,
+            ),
+            (
+                "configuration identity",
+                &self.config_identity,
+                &current.config_identity,
+            ),
+            ("target system", &self.target_system, &current.target_system),
+        ] {
+            if stored != now {
+                return Err(format!("index is stale: {label} has changed"));
+            }
+        }
+        Ok(())
+    }
+
     pub fn metadata_json(&self) -> String {
         format!(
             "{{\"kind\":{},\"host\":{},\"nixpkgsRevision\":{},\"lockfileHash\":{},\"configIdentity\":{},\"targetSystem\":{}}}",
@@ -120,6 +188,16 @@ impl SearchIndex {
             json_string(&self.config_identity),
             json_string(&self.target_system),
         )
+    }
+}
+
+fn entry_summary(entry: &BTreeMap<String, Json>) -> IndexEntry {
+    let text = |key: &str| entry.get(key).and_then(Json::as_str).map(str::to_owned);
+    IndexEntry {
+        name: text("name").unwrap_or_default(),
+        type_name: text("type"),
+        description: text("description").unwrap_or_default(),
+        read_only: entry.get("readOnly") == Some(&Json::Bool(true)),
     }
 }
 
@@ -174,263 +252,14 @@ fn nonempty_string(object: &BTreeMap<String, Json>, key: &str) -> Result<String,
     Ok(value.to_owned())
 }
 
-fn json_value(value: &Json) -> String {
-    match value {
-        Json::Null => "null".to_owned(),
-        Json::Bool(value) => value.to_string(),
-        Json::Number(value) => value.clone(),
-        Json::String(value) => json_string(value),
-        Json::Array(values) => format!(
-            "[{}]",
-            values.iter().map(json_value).collect::<Vec<_>>().join(",")
-        ),
-        Json::Object(values) => format!(
-            "{{{}}}",
-            values
-                .iter()
-                .map(|(key, value)| format!("{}:{}", json_string(key), json_value(value)))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-    }
-}
-
-struct Parser<'a> {
-    input: &'a str,
-    offset: usize,
-}
-
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        Self { input, offset: 0 }
-    }
-
-    fn parse(mut self) -> Result<Json, String> {
-        let value = self.value()?;
-        self.whitespace();
-        if self.offset != self.input.len() {
-            return Err("unexpected trailing data in JSON index".to_owned());
-        }
-        Ok(value)
-    }
-
-    fn value(&mut self) -> Result<Json, String> {
-        self.whitespace();
-        match self.peek() {
-            Some(b'{') => self.object_value(),
-            Some(b'[') => self.array_value(),
-            Some(b'"') => self.string_value().map(Json::String),
-            Some(b't') => self.literal("true", Json::Bool(true)),
-            Some(b'f') => self.literal("false", Json::Bool(false)),
-            Some(b'n') => self.literal("null", Json::Null),
-            Some(b'-' | b'0'..=b'9') => self.number_value(),
-            _ => Err(self.error("expected a JSON value")),
-        }
-    }
-
-    fn object_value(&mut self) -> Result<Json, String> {
-        self.expect(b'{')?;
-        let mut values = BTreeMap::new();
-        self.whitespace();
-        if self.consume(b'}') {
-            return Ok(Json::Object(values));
-        }
-        loop {
-            self.whitespace();
-            let key = self.string_value()?;
-            self.whitespace();
-            self.expect(b':')?;
-            let value = self.value()?;
-            if values.insert(key.clone(), value).is_some() {
-                return Err(self.error(&format!("duplicate JSON key '{key}'")));
-            }
-            self.whitespace();
-            if self.consume(b'}') {
-                break;
-            }
-            self.expect(b',')?;
-        }
-        Ok(Json::Object(values))
-    }
-
-    fn array_value(&mut self) -> Result<Json, String> {
-        self.expect(b'[')?;
-        let mut values = Vec::new();
-        self.whitespace();
-        if self.consume(b']') {
-            return Ok(Json::Array(values));
-        }
-        loop {
-            values.push(self.value()?);
-            self.whitespace();
-            if self.consume(b']') {
-                break;
-            }
-            self.expect(b',')?;
-        }
-        Ok(Json::Array(values))
-    }
-
-    fn string_value(&mut self) -> Result<String, String> {
-        self.expect(b'"')?;
-        let mut result = String::new();
-        loop {
-            let Some(byte) = self.peek() else {
-                return Err(self.error("unterminated JSON string"));
-            };
-            match byte {
-                b'"' => {
-                    self.offset += 1;
-                    return Ok(result);
-                }
-                b'\\' => {
-                    self.offset += 1;
-                    let escaped = self.peek().ok_or_else(|| self.error("incomplete escape"))?;
-                    self.offset += 1;
-                    match escaped {
-                        b'"' => result.push('"'),
-                        b'\\' => result.push('\\'),
-                        b'/' => result.push('/'),
-                        b'b' => result.push('\u{0008}'),
-                        b'f' => result.push('\u{000c}'),
-                        b'n' => result.push('\n'),
-                        b'r' => result.push('\r'),
-                        b't' => result.push('\t'),
-                        b'u' => result.push(self.unicode_escape()?),
-                        _ => return Err(self.error("invalid JSON escape")),
-                    }
-                }
-                0x00..=0x1f => return Err(self.error("control character in JSON string")),
-                _ => {
-                    let character = self.input[self.offset..]
-                        .chars()
-                        .next()
-                        .ok_or_else(|| self.error("invalid UTF-8"))?;
-                    result.push(character);
-                    self.offset += character.len_utf8();
-                }
-            }
-        }
-    }
-
-    fn unicode_escape(&mut self) -> Result<char, String> {
-        let high = self.unicode_unit()?;
-        let codepoint = match high {
-            0xd800..=0xdbff => {
-                if self.input.get(self.offset..self.offset + 2) != Some("\\u") {
-                    return Err(self.error("high surrogate without low surrogate"));
-                }
-                self.offset += 2;
-                let low = self.unicode_unit()?;
-                if !(0xdc00..=0xdfff).contains(&low) {
-                    return Err(self.error("invalid low surrogate"));
-                }
-                0x10000 + ((u32::from(high) - 0xd800) << 10) + (u32::from(low) - 0xdc00)
-            }
-            0xdc00..=0xdfff => return Err(self.error("unexpected low surrogate")),
-            _ => u32::from(high),
-        };
-        char::from_u32(codepoint).ok_or_else(|| self.error("invalid unicode codepoint"))
-    }
-
-    fn unicode_unit(&mut self) -> Result<u16, String> {
-        let end = self.offset + 4;
-        let digits = self
-            .input
-            .get(self.offset..end)
-            .ok_or_else(|| self.error("incomplete unicode escape"))?;
-        let unit =
-            u16::from_str_radix(digits, 16).map_err(|_| self.error("invalid unicode escape"))?;
-        self.offset = end;
-        Ok(unit)
-    }
-
-    fn number_value(&mut self) -> Result<Json, String> {
-        let start = self.offset;
-        self.consume(b'-');
-        match self.peek() {
-            Some(b'0') => {
-                self.offset += 1;
-                if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.error("leading zero in JSON number"));
-                }
-            }
-            Some(b'1'..=b'9') => self.digits(),
-            _ => return Err(self.error("invalid JSON number")),
-        }
-        if self.consume(b'.') {
-            if !matches!(self.peek(), Some(b'0'..=b'9')) {
-                return Err(self.error("fraction requires digits"));
-            }
-            self.digits();
-        }
-        if matches!(self.peek(), Some(b'e' | b'E')) {
-            self.offset += 1;
-            if matches!(self.peek(), Some(b'+' | b'-')) {
-                self.offset += 1;
-            }
-            if !matches!(self.peek(), Some(b'0'..=b'9')) {
-                return Err(self.error("exponent requires digits"));
-            }
-            self.digits();
-        }
-        Ok(Json::Number(self.input[start..self.offset].to_owned()))
-    }
-
-    fn digits(&mut self) {
-        while matches!(self.peek(), Some(b'0'..=b'9')) {
-            self.offset += 1;
-        }
-    }
-
-    fn literal(&mut self, literal: &str, value: Json) -> Result<Json, String> {
-        if self.input[self.offset..].starts_with(literal) {
-            self.offset += literal.len();
-            Ok(value)
-        } else {
-            Err(self.error("invalid JSON literal"))
-        }
-    }
-
-    fn whitespace(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\n' | b'\r' | b'\t')) {
-            self.offset += 1;
-        }
-    }
-
-    fn expect(&mut self, byte: u8) -> Result<(), String> {
-        if self.consume(byte) {
-            Ok(())
-        } else {
-            Err(self.error(&format!("expected '{}'", char::from(byte))))
-        }
-    }
-
-    fn consume(&mut self, byte: u8) -> bool {
-        if self.peek() == Some(byte) {
-            self.offset += 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.as_bytes().get(self.offset).copied()
-    }
-
-    fn error(&self, message: &str) -> String {
-        format!("invalid JSON index at byte {}: {message}", self.offset)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{Parser, SearchIndex};
+    use super::SearchIndex;
+    use crate::json::{Json, Parser};
 
     struct TempIndex(PathBuf);
 
@@ -471,6 +300,34 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert!(matches[0].contains("services.bluetooth.enable"));
         assert_eq!(index.host, "test-host");
+        assert!(index.validate_host("test-host").is_ok());
+        assert!(index.validate_host("other-host").is_err());
+    }
+
+    #[test]
+    fn rejects_cache_when_any_identity_field_changes() {
+        let index = SearchIndex::from_json(OPTION_INDEX, "option").unwrap();
+        let current = SearchIndex::from_json(OPTION_INDEX, "option").unwrap();
+        assert!(index.validate_identity(&current).is_ok());
+        let changed = OPTION_INDEX.replace("sha256:config", "sha256:other");
+        let current = SearchIndex::from_json(&changed, "option").unwrap();
+        assert!(
+            index
+                .validate_identity(&current)
+                .unwrap_err()
+                .contains("configuration identity")
+        );
+    }
+
+    #[test]
+    fn structured_lookup_returns_typed_entries_for_validation() {
+        let index = SearchIndex::from_json(OPTION_INDEX, "option").unwrap();
+        let entry = index.entry("services.bluetooth.enable").unwrap();
+        assert_eq!(entry.type_name.as_deref(), Some("boolean"));
+        assert!(!entry.read_only);
+        assert_eq!(index.find("BLUE").len(), 1);
+        assert!(index.entry("services.bluetooth").is_none());
+        assert!(index.find("nothing-like-this").is_empty());
     }
 
     #[test]
@@ -487,7 +344,7 @@ mod tests {
     #[test]
     fn parses_escaped_non_bmp_unicode_and_rejects_invalid_numbers() {
         let parsed = Parser::new(r#""\uD83D\uDE80""#).parse().unwrap();
-        assert_eq!(parsed, super::Json::String("🚀".to_owned()));
+        assert_eq!(parsed, Json::String("🚀".to_owned()));
         for invalid in ["01", "1.", "1e", "+1"] {
             assert!(Parser::new(invalid).parse().is_err(), "accepted {invalid}");
         }

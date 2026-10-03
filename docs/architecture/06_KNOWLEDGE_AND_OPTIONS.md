@@ -48,13 +48,13 @@ Lock-Eintrag des Host-Flakes festgelegt ist. Relay darf für Index-Aufbau und
 Suche weder einen ungebundenen Flake-Registry-Eintrag noch implizite Netzwerk-
 oder `nix search`-Auflösung verwenden.
 
-- **Optionen:** Metadaten aus der Auswertung der NixOS-Moduloptionen dieser
-  Host-Konfiguration ableiten. Die NixOS-Optionsdokumentation
-  (`nixosOptionsDoc`) ist die Referenz für die verfügbaren Dokumentationsfelder;
-  Relay normalisiert sie in ein eigenes versioniertes JSON-Schema. Der Index
-  enthält nur Optionsmetadaten, keine aktuellen Konfigurationswerte oder
-  ausgewerteten Secret-Inhalte. Nicht verfügbare Felder bleiben explizit leer;
-  `relatedPackages` wird nicht geraten.
+- **Optionen:** Metadaten aus der ausgewerteten Optionsstruktur der
+  Host-Konfiguration ableiten. Der Index enthält Beschreibungen, Typen,
+  Beispiele und Deklarationspfade, aber keine aktuellen Konfigurationswerte.
+  `default` bleibt vorerst `null`, weil das Erzwingen beliebiger NixOS-Defaults
+  zusätzliche Host-Auswertung auslösen und bei einzelnen Optionen fehlschlagen
+  kann. Nicht verfügbare Beschreibungen bleiben leer; `relatedPackages` wird
+  nicht geraten.
 - **Pakete:** Namen und beschreibende Metadaten aus dem `pkgs`-Attributsatz
   desselben gepinnten `nixpkgs` beziehen. Der Index-Aufbau darf keine
   Paketderivationen bauen. Ein Name ist nur ein Suchtreffer, keine Zusage, dass
@@ -67,11 +67,12 @@ oder `nix search`-Auflösung verwenden.
   Lockfile-Hash, relevanter Konfigurationsidentität, Zielsystem und
   Index-Schema-Version markiert. Bei fehlender oder abweichender Identität wird
   der Cache verworfen und nicht stillschweigend wiederverwendet.
-- **Validierung:** Der Generator muss seine konkrete JSON-Schnittstelle auf der
-  unterstützten NixOS-/nixpkgs-Version nachweisen. Fixtures und Schema-Tests
-  decken Normalisierung, fehlende Felder, fehlerhafte JSON-Daten und veraltete
-  Cache-Identität ab. Bis diese Prüfung vorliegt, bleiben
-  `search-option`/`search-package` nicht verfügbar.
+- **Validierung:** Der Generator gibt schema-v1-JSON aus. Schema- und
+  Identitätstests decken fehlerhafte Daten und veraltete Cache-Felder ab. Die
+  Generatoren `index-options` und `index-packages` schreiben den geprüften
+  Cache atomar an einen expliziten Ausgabepfad. Die Suchbefehle verlangen den
+  gleichen lokalen Flake und Host, werten die aktuelle Identität erneut aus und
+  verweigern bei Abweichungen die Suche.
 
 Der CLI-Index-Leser akzeptiert aktuell nur explizit über `--index PATH`
 übergebene JSON-Dateien. Das Schema ist Version 1 und bindet einen Index mit
@@ -82,9 +83,9 @@ Der CLI-Index-Leser akzeptiert aktuell nur explizit über `--index PATH`
 `description`. Die Suche gleicht den Begriff ohne Beachtung der Groß-/Kleinschreibung
 gegen den Namen ab.
 
-Der Leser prüft Syntax und Schema, verifiziert aber weder Lockfile-/Config-Hash
-noch Host-Identität oder Aktualität; die CLI gibt dafür eine Warnung aus. Er
-führt keine Nix-Befehle aus und erzeugt keinen Index. Die konkrete CLI-Form des
-`nixosOptionsDoc`-Aufrufs und die stabile Paket-Metadatenprojektion müssen
-weiterhin gegen mindestens eine unterstützte Toolchain validiert werden; daher
-ist noch kein Generator oder automatischer Host-Index aktiviert.
+Die CLI prüft Syntax, Schema, Flake-Host, nixpkgs-Revision, Lockfile-Hash,
+Konfigurationsidentität und Zielsystem vor jeder Suche. Nix-Auswertung bleibt im
+Nix-Adapter und baut keine Paketderivationen. Fehlerhafte Paket-Metadaten einzelner
+Attribute werden ausgelassen. Die Generatoren wurden mit Nix 2.34.8 und dem
+NixOS-Host `nixos` (nixpkgs `4feb8eb`) ausgeführt; `default` bleibt wie oben
+beschrieben leer.

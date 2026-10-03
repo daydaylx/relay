@@ -20,7 +20,7 @@ exercised inside a NixOS VM.
 
 | Target | State | Evidence |
 | --- | --- | --- |
-| T0 Repository ready | done, except two decisions | README, AGENTS.md, ADR 0001–0008, security model, Cargo workspace, flake (package, dev shell, checks), CI. **No license chosen** (deliberately, see `06_REPO_SETUP.md`). Baseline commit created on the author's instruction (no tag, no push). |
+| T0 Repository ready | done | README, AGENTS.md, ADR 0001–0008, security model, Cargo workspace, flake (package, dev shell, checks), CI. MIT licensed (`LICENSE`). Baseline committed and pushed to the public repo `daydaylx/relay` on the author's instruction (no tag). |
 | T1 Read-only observer | done | `relay status` reports NixOS version, host, kernel, active/booted generation, running system path, config identity (`--flake`), `nixos-version --json` revision, failed units, desktop session, managed-module sync, pending change; `generations`, `health`, `index-*`, `search-*`. Run against the real host (read-only). |
 | T2 Safe candidate builder | done | typed change + renderer + isolation + evaluation + build + closure diff + dry-activate + risk + protected rejection + drift detection. Real Nix run: `plan` of `add-package hello` against a real minimal NixOS flake (`path:` candidate, real `nix eval`/`nix build`/`diff-closures`), live source untouched. Failure paths against real Nix: unknown package and unknown option fail in evaluation, journaled, stderr kept private. |
 | T3 Controlled activator | done (VM) | NixOS VM test `checks.x86_64-linux.activation`: real `sudo`, `nix-env`, `switch-to-configuration dry-activate/test/switch/boot`, real systemd health. A package change and an option change run end to end. |
@@ -37,7 +37,7 @@ runs the tests in the sandbox. The VM check passed on 2026-10-03 on the developm
 
 ## Known limits and open decisions
 
-- **License** is undecided (no file was added). A **tag** and any **push** are the author's decision.
+- **Tags** are the author's decision. The repository is public under the MIT license.
 - **Daily-driver pilot** is open: do the one-time setup, then pilot on a non-critical change first.
   `docs/planning/07_IMPLEMENTATION_ORDER.md` says recovery must work before a daily-driver pilot; it
   works in the VM, not yet on this hardware.

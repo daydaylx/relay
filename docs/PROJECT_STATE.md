@@ -50,7 +50,7 @@ Wichtige Details, die man nicht aus dem Code raten sollte:
    in die Host-Module eintragen, `git add`, einmal selbst `nixos-rebuild switch`, dann eine harmlose Änderung
    (`add-package`) mit `plan`/`show`/`apply` und `undo` durchspielen. Vorher `relay status --flake /etc/nixos`
    prüfen (`managed_module` muss `in-sync` sein).
-2. **Lizenz** wählen (nichts wurde angelegt) und optional taggen — nur auf ausdrückliche Anweisung des Nutzers.
+2. Optional taggen (`v0.1.0` o. ä.) — nur auf ausdrückliche Anweisung des Nutzers.
 3. **Provider live ausprobieren**: `relay ask --show-prompt` ansehen, dann mit einem lokalen Modell (Ollama) oder
    einem gehosteten Provider eine harmlose Anfrage stellen; die HTTP-Provider wurden nur gegen Fakes getestet.
    Danach ggf. die Hyprland-Integration erweitern (Steuerung des Kompositors erst mit eigenem Recovery-Entwurf).

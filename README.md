@@ -109,3 +109,7 @@ Für die Umsetzung zuerst lesen:
 9. `adr/` (insbesondere 0005 und 0006)
 
 Repo-Templates für Issues und Pull Requests liegen unter `.github/`.
+
+## Lizenz
+
+MIT, siehe [`LICENSE`](LICENSE).

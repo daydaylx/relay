@@ -20,6 +20,7 @@ rustPlatform.buildRustPackage {
 
   meta = {
     description = "NixOS-first system control tool: intent to safe, recoverable NixOS changes";
+    license = lib.licenses.mit;
     mainProgram = "relay";
     platforms = lib.platforms.linux;
   };

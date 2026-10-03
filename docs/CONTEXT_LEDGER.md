@@ -54,8 +54,8 @@ Aktivierung wird nie auf dem Daily-Driver getestet, nur in der VM.
 ## Offene Punkte
 
 - Daily-Driver-Pilot (Einmal-Setup, dann harmlose Änderung) steht aus.
-- Lizenz ist nicht festgelegt. Der Stand ist als Baseline committet (auf ausdrückliche Anweisung); Tags und
-  Pushes erfolgen nur auf ausdrückliche Nutzeranweisung.
+- Lizenz: MIT. Das Repository ist öffentlich (`daydaylx/relay`). Tags erfolgen nur auf ausdrückliche
+  Nutzeranweisung.
 - Provider-Qualität und Live-APIs ungetestet; Prompt/Antwort nur gegen Fakes.
 - Reboot-Verifikation nach echtem Neustart ist nur im Simulator belegt.
 - Health ist ein Snapshot nach Beobachtungsfenster; spätere Ausfälle werden nicht erkannt.

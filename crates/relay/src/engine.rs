@@ -235,6 +235,8 @@ impl Engine {
             .map_err(|_| "managed.nix is not valid UTF-8".to_owned())?;
         let mut managed = parse_managed(&before_text)?;
         self.check_runtime_matches(&before)?;
+        self.say("checking that the whole source is applied to the running system");
+        self.check_source_is_applied(flake, host, &base_system)?;
         for change in changes {
             managed.apply(change)?;
         }
@@ -1294,6 +1296,26 @@ impl Engine {
         {
             Some(entry) => Err(unresolved_message(entry)),
             None => Ok(()),
+        }
+    }
+
+    /// Relay may only change a system whose source is fully applied: if the live source already
+    /// differs from what is running (unapplied edits anywhere in the configuration), a candidate
+    /// would silently activate those edits too, and `undo` could not restore a coherent state.
+    fn check_source_is_applied(
+        &self,
+        flake: &Path,
+        host: &str,
+        running: &str,
+    ) -> Result<(), String> {
+        let evaluated = self
+            .nix
+            .evaluate_toplevel_output(FlakeSource::Live(flake), host)
+            .map_err(|error| format!("could not evaluate the live configuration: {error}"))?;
+        if evaluated == running {
+            Ok(())
+        } else {
+            Err("the configuration source has changes that are not applied to the running system (anywhere in the configuration, not only in relay/managed.nix); a Relay change would activate them too. Apply them first (for example with nixos-rebuild switch) or revert them".into())
         }
     }
 

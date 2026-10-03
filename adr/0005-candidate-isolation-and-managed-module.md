@@ -34,3 +34,12 @@ Quelle sich geändert hat.
   Aktivierung ab (fail closed).
 - Nur Optionspfade aus Bezeichnern (`a.b-c`) und Pakete aus einfachen Attributnamen werden
   unterstützt; alles andere wird bei der Validierung abgelehnt.
+
+## Nachtrag: die ganze Quelle muss angewendet sein
+
+Ein Kandidat ist eine Kopie der *gesamten* Quelle plus der Relay-Änderung. Hat der Nutzer an anderer
+Stelle noch nicht angewendete Änderungen (z. B. halbfertige Desktop-Konfiguration), würde `apply`
+sie mit aktivieren, und `undo` stellte nur das vorherige System, nicht aber die Quelle dazu wieder her.
+Deshalb plant Relay nur, wenn die Evaluation der Live-Quelle (`toplevel.outPath`, nur Evaluation)
+genau dem laufenden System entspricht; sonst bricht `plan` mit einer Erklärung ab. Kommentare und
+andere Änderungen ohne Wirkung auf das System lösen das nicht aus. Es gibt dafür keinen Override.

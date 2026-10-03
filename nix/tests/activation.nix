@@ -70,6 +70,11 @@ let
         dir="''${dir#path:}"
         case "$ref" in
           *.config.environment.etc) echo true ;;
+          *.outPath)
+            # What the live source would build to: the system its managed module belongs to.
+            sum=$(sha256sum "$dir/relay/managed.nix" | cut -c1-32)
+            out=$(grep "^$sum " /tmp/relay-candidates | cut -d' ' -f2) || true
+            echo "''${out:-/nix/store/$sum-unknown}" ;;
           *.drvPath)
             sum=$(sha256sum "$dir/relay/managed.nix" | cut -c1-32)
             echo "/nix/store/$sum-nixos-system-machine.drv" ;;
@@ -227,6 +232,7 @@ testers.runNixOSTest {
     inhibited = specialisation("inhibited")
     machine.succeed(
         "printf '%s %s\\n' "
+        + f"{digest('${managedBase}')} {base} "
         + f"{digest('${managedGood}')} {good} "
         + f"{digest('${managedOption}')} {option} "
         + f"{digest('${managedBroken}')} {broken} "

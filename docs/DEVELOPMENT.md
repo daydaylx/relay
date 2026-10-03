@@ -135,6 +135,9 @@ option defaults can fail while evaluating some host options.
 
 ## Limits to know about
 
+- The whole source must already be applied: `plan` evaluates the live source's `toplevel.outPath` and refuses
+  when it differs from `/run/current-system` (edits you have not rebuilt yet would otherwise be activated
+  together with the Relay change).
 - Evaluation of the isolated candidate and of the live source must give the same derivation.
   Configurations that embed `self.rev` or `self.lastModified` differ between a `path:` candidate and
   a Git checkout and are refused before activation.

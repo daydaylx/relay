@@ -177,6 +177,28 @@ impl NixAdapter {
         Ok(path)
     }
 
+    /// The store path the host configuration would build to (evaluation only, nothing is built).
+    /// Equal to the running system exactly when the source is fully applied.
+    pub fn evaluate_toplevel_output(
+        &self,
+        source: FlakeSource<'_>,
+        host: &str,
+    ) -> Result<String, NixError> {
+        let reference = attribute_reference(source, host, "config.system.build.toplevel.outPath")?;
+        let output = self.run(
+            Invocation::new(&self.nix).args(FEATURES).args([
+                "eval",
+                "--raw",
+                "--no-write-lock-file",
+                &reference,
+            ]),
+            "Nix evaluation",
+        )?;
+        let path = output.stdout_text()?;
+        validate_store_path(&path)?;
+        Ok(path)
+    }
+
     /// Whether the host configuration imports `relay/managed.nix` (the module publishes
     /// `/etc/relay/managed.nix`, which makes the import observable without parsing Nix).
     pub fn imports_managed_module(

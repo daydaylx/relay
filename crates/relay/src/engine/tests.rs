@@ -55,6 +55,8 @@ struct SimState {
     edit_on_test: Option<(PathBuf, String)>,
     /// Make the live re-evaluation return a different derivation.
     reeval_returns_other_drv: bool,
+    /// Which system a source tree (first 32 hex of its hash) was built into.
+    tree_systems: BTreeMap<String, String>,
 }
 
 struct Sim {
@@ -205,6 +207,15 @@ impl Sim {
                 "false"
             });
         }
+        if reference.ends_with(".config.system.build.toplevel.outPath") {
+            // What the source would build to: the system it was built into, or a stranger.
+            let hash = self.tree_hash(reference);
+            let key = hash[..32].to_owned();
+            let system = self.lock().tree_systems.get(&key).cloned();
+            return Self::ok(
+                &system.unwrap_or_else(|| format!("/nix/store/{key}-nixos-system-host")),
+            );
+        }
         let label = if isolated { "eval" } else { "eval-live" };
         let count = self.step(label);
         self.crash_check(true, label, count);
@@ -233,6 +244,9 @@ impl Sim {
             .next()
             .unwrap();
         let system = format!("/nix/store/{hash}-nixos-system-host");
+        self.lock()
+            .tree_systems
+            .insert(hash.to_owned(), system.clone());
         // Find the candidate directory with this identity to embed its managed module.
         let (kernel, inhibitors) = {
             let state = self.lock();
@@ -464,6 +478,11 @@ impl Env {
             state_dir,
         };
         // Everything above is setup, not behaviour under test.
+        let initial = env.live_hash();
+        env.sim
+            .lock()
+            .tree_systems
+            .insert(initial[..32].to_owned(), BASE.to_owned());
         env.sim.clear_calls();
         env
     }
@@ -1888,4 +1907,46 @@ fn without_a_reachable_compositor_the_desktop_check_is_skipped_visibly_not_silen
             .baseline_monitors,
         None
     );
+}
+
+// ------------------------------------------------- source must be applied before planning
+
+#[test]
+fn unapplied_edits_anywhere_in_the_configuration_block_planning() {
+    let env = Env::new();
+    // The user is half-way through editing their desktop configuration; the running system does
+    // not have these edits yet. A Relay candidate would activate them as a side effect.
+    fs::write(
+        env.flake.join("configuration.nix"),
+        "{ desktop.wip = true; }\n",
+    )
+    .unwrap();
+    let error = env.plan(&bluetooth()).unwrap_err();
+    assert!(
+        error.contains("not applied to the running system"),
+        "{error}"
+    );
+    assert!(
+        env.states().is_empty(),
+        "refused before anything was journaled or built"
+    );
+    assert!(env.sim.privileged_log().is_empty());
+    // Once the edit is gone (or has been applied by a rebuild) planning works again.
+    fs::write(env.flake.join("configuration.nix"), "{ }\n").unwrap();
+    assert!(env.plan(&bluetooth()).is_ok());
+}
+
+#[test]
+fn after_an_apply_and_an_undo_the_source_still_matches_the_system_it_belongs_to() {
+    let env = Env::new();
+    assert_eq!(
+        env.plan_and_apply(&vlc(true)).outcome,
+        ApplyOutcome::Switched
+    );
+    // Source and runtime moved together, so the next plan is allowed...
+    let plan = env.plan(&bluetooth()).unwrap();
+    env.engine().discard(&plan.record.id).unwrap();
+    // ...and so is one after an undo returned both to the earlier state.
+    env.engine().undo(Confirmation::granted()).unwrap();
+    assert!(env.plan(&bluetooth()).is_ok());
 }

@@ -48,6 +48,8 @@ runs the tests in the sandbox. The VM check passed on 2026-10-03 on the developm
   VM). Bootloader *configuration* stays protected.
 - **Health is a snapshot after an observation window** (default 5 s). A unit that fails later is not
   detected; use `--observe` and `--expect-active`.
+- **Applied source only**: `plan` refuses while the live source evaluates to something other than the
+  running system (unapplied edits anywhere in the configuration). Rebuild first, or revert the edits.
 - **Evaluation identity**: configurations that embed `self.rev`/`self.lastModified` differ between the
   isolated candidate and a Git checkout and are refused before activation.
 - **Compatibility**: only Nix 2.34.8 / NixOS 26.05 (nixpkgs `4feb8eb`) were exercised. `dry-activate`

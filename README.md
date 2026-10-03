@@ -36,6 +36,8 @@ Relay V1 kann zuverlässig:
 9. unterbrochene Änderungen nach einem Absturz erkennen und zurückrollen (`recover`).
 10. optional: Wünsche in natürlicher Sprache in geprüfte, typisierte Vorschläge übersetzen (`ask`).
 11. unter Hyprland Monitore, Workspaces und Kompositor-Gesundheit lesen und in die Sicherheitsprüfung einbeziehen (`desktop`).
+12. optional mit dem separaten Original-Pi-Agenten natürlichsprachlich inspizieren, planen und
+    bestätigte Relay-Änderungen ausführen (`nix run .#agent`).
 
 Relay schreibt automatisch nur in einen eigenen kontrollierten Bereich: `relay/managed.nix`.
 Geschützte Ressourcen (`system.stateVersion`, Bootloader, Dateisysteme, LUKS, Nix-Trust, Auth/SSH,
@@ -80,9 +82,10 @@ Teststrategie: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 ## Aktueller Stand
 
 Die Zielzustände T1 (Observer), T2 (Candidate Builder), T3 (Activator), T4 (Recovery), T5
-(optionale KI-Schicht) und T6 (Hyprland, read-only) sind im Code umgesetzt und durch Simulator-Tests,
-echte Nix-Läufe, eine laufende Hyprland-Sitzung und einen NixOS-VM-Test belegt. Details und offene
-Punkte: [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+(optionale KI-Schicht) und T6 (Hyprland, read-only) sind implementiert und durch Simulator-Tests,
+echte Nix-Läufe, eine laufende Hyprland-Sitzung und einen NixOS-VM-Test belegt. Der optionale
+Pi-Agent (T7) ist implementiert; interaktive Provider-Nutzung und Usability sind noch nicht live
+erprobt. Der aktuelle Hoststatus und alle offenen Punkte stehen in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 ## Installation auf NixOS
 
@@ -93,6 +96,21 @@ nix profile install /home/g/Projekte/Relay_NixOS_Project#default
 ```
 
 Die Installation ändert nur das Benutzerprofil, nicht die Systemkonfiguration.
+
+Der optionale Agent wird separat gebaut und gestartet. Das Nix-Paket bringt Node.js mit; für die
+Nutzung muss Node nicht separat installiert sein:
+
+```sh
+nix run .#agent -- --init-config
+nix run .#agent
+```
+
+Für natürliche Sprache braucht der Agent einen konfigurierten Modellprovider. Er lädt kein
+persönliches Pi-Profil und bietet dem Modell weder MCP noch allgemeine Datei- oder Shell-Werkzeuge.
+Seine feste Werkzeugliste umfasst Status, Health, begrenzte Dienst- und Themendiagnosen sowie
+Änderungsplanung und Planansicht. Apply, Undo und Recovery erfordern direkte, zielgebundene Bestätigung durch
+den Nutzer. Toolumfang, Bestätigung und offene Pilot-/Diagnosegrenzen stehen in
+[`agent/README.md`](agent/README.md) und [`docs/audits/SYSTEM_AGENT_V1_RESULT.md`](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
 ## Projektführung
 

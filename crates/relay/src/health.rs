@@ -15,6 +15,14 @@ pub struct HealthSnapshot {
     pub unhealthy_units: BTreeSet<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitSummary {
+    pub name: String,
+    pub load: String,
+    pub active: String,
+    pub sub: String,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct HealthPolicy {
     /// How long to wait for a freshly activated system to leave `starting`/`initializing`.
@@ -66,7 +74,17 @@ impl SystemAdapter {
             .runner
             .run(&Invocation::new("systemctl").arg("is-system-running"))?;
         let state = outcome.stdout_text()?;
-        if state.is_empty() || state.contains(char::is_whitespace) {
+        if !matches!(
+            state.as_str(),
+            "running"
+                | "degraded"
+                | "starting"
+                | "stopping"
+                | "maintenance"
+                | "initializing"
+                | "offline"
+                | "unknown"
+        ) {
             return Err("systemctl did not report a system state".into());
         }
         Ok(state)
@@ -92,6 +110,9 @@ impl SystemAdapter {
                 .get("unit")
                 .and_then(Json::as_str)
                 .ok_or_else(|| "systemctl unit entry has no name".to_owned())?;
+            if validate_unit_name(name).is_err() {
+                continue;
+            }
             let active = unit
                 .get("active")
                 .and_then(Json::as_str)
@@ -102,6 +123,95 @@ impl SystemAdapter {
             }
         }
         Ok(unhealthy)
+    }
+
+    /// List service names and their machine-readable systemd states, optionally filtered by a
+    /// literal substring. Descriptions and process arguments are intentionally omitted.
+    pub fn unit_summaries(&self, filter: &str, limit: usize) -> Result<Vec<UnitSummary>, String> {
+        if filter.len() > 128 || filter.chars().any(char::is_control) {
+            return Err("unit filter is invalid".into());
+        }
+        let outcome = self.runner.run(&Invocation::new("systemctl").args([
+            "list-units",
+            "--type=service",
+            "--all",
+            "--output=json",
+            "--no-pager",
+        ]))?;
+        if !outcome.success() {
+            return Err("systemctl could not list service units".into());
+        }
+        let value = Json::parse(&outcome.stdout_text()?)?;
+        let units = value
+            .as_array()
+            .ok_or_else(|| "systemctl service list is not a JSON array".to_owned())?;
+        let needle = filter.to_ascii_lowercase();
+        let mut result = Vec::new();
+        for unit in units {
+            let name = unit
+                .get("unit")
+                .and_then(Json::as_str)
+                .ok_or_else(|| "systemctl service entry has no name".to_owned())?;
+            if validate_unit_name(name).is_err() || !name.ends_with(".service") {
+                continue;
+            }
+            if !needle.is_empty() && !name.to_ascii_lowercase().contains(&needle) {
+                continue;
+            }
+            result.push(UnitSummary {
+                name: name.to_owned(),
+                load: unit
+                    .get("load")
+                    .and_then(Json::as_str)
+                    .filter(|value| {
+                        matches!(
+                            *value,
+                            "loaded"
+                                | "not-found"
+                                | "error"
+                                | "masked"
+                                | "stub"
+                                | "merged"
+                                | "unknown"
+                        )
+                    })
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                active: unit
+                    .get("active")
+                    .and_then(Json::as_str)
+                    .filter(|value| {
+                        matches!(
+                            *value,
+                            "active"
+                                | "reloading"
+                                | "inactive"
+                                | "failed"
+                                | "activating"
+                                | "deactivating"
+                                | "maintenance"
+                                | "unknown"
+                        )
+                    })
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                sub: unit
+                    .get("sub")
+                    .and_then(Json::as_str)
+                    .filter(|value| {
+                        value.len() <= 32
+                            && value.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+                            })
+                    })
+                    .unwrap_or("unknown")
+                    .to_owned(),
+            });
+            if result.len() >= limit.clamp(1, 100) {
+                break;
+            }
+        }
+        Ok(result)
     }
 
     pub fn is_active(&self, unit: &str) -> Result<bool, String> {

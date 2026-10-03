@@ -1614,13 +1614,83 @@ fn abandoned_plans_are_closed_by_recovery_and_stale_locks_do_not_block_it() {
     crash(|| env.plan(&bluetooth()));
     let (id, state) = env.states().into_iter().next().unwrap();
     assert_eq!(state, ChangeState::Planned);
+    let preview = env.engine().recovery_preview().unwrap();
+    assert_eq!(preview.len(), 1);
+    assert_eq!(preview[0].id, id);
+    assert_eq!(preview[0].state, "planned");
     // The crashed process's lock file names a pid that no longer exists.
     fs::write(env.state_dir.join("lock"), "4294967294\n").unwrap();
-    let recovered = env.engine().recover(false).unwrap();
+    assert!(env.engine().recover_expected(Some(&[]), false).is_err());
+    assert_eq!(env.states()[&id], ChangeState::Planned);
+    let recovered = env
+        .engine()
+        .recover_expected(Some(std::slice::from_ref(&id)), false)
+        .unwrap();
     assert_eq!(recovered[0].id, id);
     assert_eq!(env.states()[&id], ChangeState::Failed);
     assert!(!env.candidate_exists(&id));
     assert!(env.plan(&bluetooth()).is_ok());
+}
+
+#[test]
+fn recovery_closes_a_built_candidate_without_activating_it() {
+    let env = Env::new();
+    let plan = env
+        .plan(&[Change::AddPackage {
+            name: "hello".into(),
+        }])
+        .unwrap();
+    assert_eq!(env.states()[&plan.record.id], ChangeState::Built);
+    assert!(env.candidate_exists(&plan.record.id));
+
+    let preview = env.engine().recovery_preview().unwrap();
+    assert_eq!(preview.len(), 1);
+    assert_eq!(preview[0].id, plan.record.id);
+    assert_eq!(preview[0].state, "built");
+    let recovered = env
+        .engine()
+        .recover_expected(Some(std::slice::from_ref(&plan.record.id)), false)
+        .unwrap();
+
+    assert_eq!(recovered[0].summary, "abandoned candidate closed");
+    assert_eq!(env.states()[&plan.record.id], ChangeState::Failed);
+    assert!(!env.candidate_exists(&plan.record.id));
+    assert_eq!(env.current(), BASE);
+    assert_eq!(env.profile(), BASE);
+}
+
+#[test]
+fn undo_refuses_when_the_change_differs_from_the_reviewed_target() {
+    let env = Env::new();
+    let first = env.plan_and_apply(&bluetooth());
+    assert!(matches!(first.outcome, ApplyOutcome::Switched));
+    let second_change = Change::AddPackage {
+        name: "hello".into(),
+    };
+    let second = env.plan(&[second_change]).unwrap();
+    assert!(matches!(
+        env.apply(&second.record.id).unwrap().outcome,
+        ApplyOutcome::Switched
+    ));
+    let reviewed_target = env.engine().undo_target().unwrap();
+    let third = env
+        .plan(&[Change::SetOption {
+            name: "services.example.enabled".into(),
+            value: Value::Bool(true),
+        }])
+        .unwrap();
+    assert!(matches!(
+        env.apply(&third.record.id).unwrap().outcome,
+        ApplyOutcome::Switched
+    ));
+    let actions_before = env.sim.actions();
+    let error = env
+        .engine()
+        .undo_expected(Some(&reviewed_target), Confirmation::granted())
+        .unwrap_err();
+    assert!(error.contains("changed after the preview"));
+    assert_eq!(env.sim.actions(), actions_before);
+    assert_eq!(env.engine().undo_target().unwrap(), third.record.id);
 }
 
 // ---------------------------------------------------------------- explanation

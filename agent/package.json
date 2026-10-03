@@ -1,0 +1,25 @@
+{
+  "name": "@relay/system-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
+    "typebox": "1.3.27"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.11",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  }
+}

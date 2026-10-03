@@ -1,5 +1,6 @@
 mod ask;
 mod desktop;
+mod protocol_io;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -39,6 +40,8 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         "status" => status(rest)?,
         "generations" => list_generations(rest)?,
         "health" => health(rest)?,
+        "units" => units(rest)?,
+        "diagnose" => diagnose(rest)?,
         "index-options" | "index-packages" => run_index(command, rest)?,
         "search-option" | "search-package" => run_search(command, rest)?,
         "check" => check(rest)?,
@@ -50,6 +53,8 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         "plan" => plan(rest)?,
         "preview" => preview(rest)?,
         "show" => show(rest)?,
+        "undo-preview" => undo_preview(rest)?,
+        "recover-preview" => recover_preview(rest)?,
         "history" => history(rest)?,
         "discard" => discard(rest)?,
         "apply" => return apply(rest),
@@ -57,6 +62,7 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         "recover" => return recover(rest),
         "ask" => return ask::ask(rest),
         "desktop" => return desktop::desktop(rest),
+        "protocol" if rest == ["--stdio"] => protocol_io::run_stdio()?,
         _ => return Err(format!("unknown command '{command}'\n{}", usage())),
     }
     Ok(ExitCode::SUCCESS)
@@ -280,6 +286,68 @@ fn health(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn units(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["--filter", "--limit"], &[])?;
+    parsed.no_positional()?;
+    let filter = parsed.one("--filter")?.unwrap_or("");
+    let limit = parsed.one("--limit")?.map_or(Ok(50usize), |value| {
+        value
+            .parse::<usize>()
+            .map_err(|_| "--limit must be an integer".to_owned())
+    })?;
+    let runner: Arc<dyn Runner> = Arc::new(ProcessRunner::default());
+    let units = relay::SystemAdapter::new(runner).unit_summaries(filter, limit)?;
+    let data = units
+        .into_iter()
+        .map(|unit| {
+            format!(
+                "{{\"unit\":{},\"load\":{},\"active\":{},\"sub\":{}}}",
+                json_string(&unit.name),
+                json_string(&unit.load),
+                json_string(&unit.active),
+                json_string(&unit.sub)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    println!("[{data}]");
+    Ok(())
+}
+
+fn diagnose(args: &[String]) -> Result<(), String> {
+    let parsed = parse(
+        args,
+        &["--topic", "--root", "--filter", "--unit", "--limit"],
+        &[],
+    )?;
+    parsed.no_positional()?;
+    let topic = parsed.required("--topic")?;
+    let limit = parsed.one("--limit")?.map_or(Ok(20usize), |value| {
+        value
+            .parse::<usize>()
+            .map_err(|_| "--limit must be an integer".to_owned())
+    })?;
+    let root = root_of(&parsed)?;
+    let runner: Arc<dyn Runner> = Arc::new(ProcessRunner::default());
+    let diagnostics = relay::diagnostics::Diagnostics::new(root, Arc::clone(&runner));
+    let output = match topic {
+        "network" => diagnostics.network_json()?,
+        "bluetooth" => diagnostics.bluetooth_json(),
+        "hardware" => diagnostics.hardware_json(),
+        "processes" => diagnostics.processes_json(parsed.one("--filter")?.unwrap_or(""))?,
+        "journal" => diagnostics.journal_json(parsed.one("--unit")?, limit)?,
+        "desktop" => diagnostics.desktop_json(),
+        _ => {
+            return Err(
+                "--topic must be network, bluetooth, hardware, processes, journal, or desktop"
+                    .into(),
+            );
+        }
+    };
+    println!("{output}");
+    Ok(())
+}
+
 fn run_search(command: &str, args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["--index", "--flake", "--host", "--root"], &[])?;
     let query = match parsed.positional.as_slice() {
@@ -462,6 +530,40 @@ fn show(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn undo_preview(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["--state-dir", "--root"], &[])?;
+    parsed.no_positional()?;
+    let engine = build_engine(&parsed)?;
+    let id = engine.undo_target()?;
+    let review = engine.review(&id)?;
+    println!(
+        "{{\"change_id\":{},\"review\":{}}}",
+        json_string(&id),
+        json_string(&review)
+    );
+    Ok(())
+}
+
+fn recover_preview(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["--state-dir", "--root"], &[])?;
+    parsed.no_positional()?;
+    let entries = build_engine(&parsed)?.recovery_preview()?;
+    let values = entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "{{\"id\":{},\"state\":{},\"summary\":{}}}",
+                json_string(&entry.id),
+                json_string(&entry.state),
+                json_string(&entry.summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    println!("[{values}]");
+    Ok(())
+}
+
 fn discard(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["--state-dir", "--root"], &[])?;
     build_engine(&parsed)?.discard(parsed.id()?)?;
@@ -526,33 +628,63 @@ fn apply_with(
 }
 
 fn undo(args: &[String]) -> Result<ExitCode, String> {
-    let parsed = parse(args, &["--state-dir", "--root", "--observe"], &["--yes"])?;
+    let parsed = parse(
+        args,
+        &["--state-dir", "--root", "--observe", "--expect-change-id"],
+        &["--yes"],
+    )?;
     parsed.no_positional()?;
-    undo_with(&build_engine(&parsed)?, parsed.has("--yes"))
+    undo_with(
+        &build_engine(&parsed)?,
+        parsed.has("--yes"),
+        parsed.one("--expect-change-id")?,
+    )
 }
 
-fn undo_with(engine: &Engine, assume_yes: bool) -> Result<ExitCode, String> {
+fn undo_with(
+    engine: &Engine,
+    assume_yes: bool,
+    expected_id: Option<&str>,
+) -> Result<ExitCode, String> {
     let target = engine.undo_target()?;
+    if expected_id.is_some_and(|expected| expected != target) {
+        return Err("the latest applied change changed after the preview; review it again".into());
+    }
     let summary = format!(
         "Undo the most recent applied change:\n{}",
         engine.explain(&target)?
     );
     let confirmation = confirm(&summary, "Undo it?", assume_yes)?;
-    Ok(finish(&engine.undo(confirmation)?, true))
+    Ok(finish(
+        &engine.undo_expected(expected_id, confirmation)?,
+        true,
+    ))
 }
 
 fn recover(args: &[String]) -> Result<ExitCode, String> {
     let parsed = parse(
         args,
-        &["--state-dir", "--root", "--observe"],
+        &["--state-dir", "--root", "--observe", "--expect-pending"],
         &["--abort-pending"],
     )?;
     parsed.no_positional()?;
-    recover_with(&build_engine(&parsed)?, parsed.has("--abort-pending"))
+    recover_with(
+        &build_engine(&parsed)?,
+        parsed.has("--abort-pending"),
+        (!parsed.all("--expect-pending").is_empty()).then(|| parsed.all("--expect-pending")),
+    )
 }
 
-fn recover_with(engine: &Engine, abort_pending: bool) -> Result<ExitCode, String> {
-    let results = engine.recover(abort_pending)?;
+fn recover_with(
+    engine: &Engine,
+    abort_pending: bool,
+    expected_ids: Option<&[String]>,
+) -> Result<ExitCode, String> {
+    let results = if let Some(expected_ids) = expected_ids {
+        engine.recover_expected(Some(expected_ids), abort_pending)?
+    } else {
+        engine.recover(abort_pending)?
+    };
     let items = results
         .iter()
         .map(|entry| {
@@ -664,6 +796,7 @@ fn usage() -> &'static str {
     "usage: relay status [--root PATH] [--flake PATH] [--state-dir DIR]
        relay generations [--root PATH]
        relay health
+       relay diagnose --topic network|bluetooth|hardware|processes|journal [--filter NAME] [--unit UNIT] [--limit N]
        relay <index-options|index-packages> --flake PATH --host HOST --output PATH
        relay <search-option|search-package> <QUERY> --index PATH --flake PATH --host HOST [--root PATH]
        relay check <add-package|remove-package> <PACKAGE>
@@ -672,12 +805,14 @@ fn usage() -> &'static str {
        relay init --flake PATH
        relay plan --flake PATH --host HOST [--preview] [--state-dir DIR] (<change as for check> | --intent FILE|-)
        relay show|preview|discard <CHANGE-ID> [--state-dir DIR]
+       relay undo-preview|recover-preview [--state-dir DIR]
        relay history [--state-dir DIR]
        relay apply <CHANGE-ID> [--yes] [--expect-active UNIT]... [--observe SECONDS] [--no-desktop-check] [--state-dir DIR]
-       relay undo [--yes] [--observe SECONDS] [--state-dir DIR]
-       relay recover [--abort-pending] [--observe SECONDS] [--state-dir DIR]
+       relay undo [--yes] [--expect-change-id ID] [--observe SECONDS] [--state-dir DIR]
+       relay recover [--abort-pending] [--expect-pending ID]... [--observe SECONDS] [--state-dir DIR]
        relay ask <REQUEST> --host HOST [--flake PATH] [--provider command|openai|anthropic] [--model M] [--show-prompt] [--explain] [--apply] [--options-index P] [--packages-index P]
        relay desktop <status|health>
+       relay protocol --stdio  # newline-delimited JSON protocol v1
        relay <help|--help|version|--version>"
 }
 

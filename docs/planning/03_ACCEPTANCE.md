@@ -41,5 +41,6 @@ Question → System State → Config/Runtime → Explanation                  (s
 
 Die Evaluation/Build-Stufe ist in der VM durch einen Shim ersetzt (kein Netzwerk, kein Build eines
 NixOS-Systems aus Quellen möglich) und wird deshalb getrennt gegen echtes Nix belegt (N). Die
-Kombination „echte Evaluation und echte Aktivierung auf derselben Maschine“ ist die offene
-Daily-Driver-Erprobung (siehe `PROJECT_STATUS.md`).
+Kombination „echte Evaluation und echte Aktivierung auf derselben Maschine“ wurde nicht erprobt.
+Aktivierung und Recovery werden in der NixOS-VM getestet; der Daily Driver ist keine Testumgebung.
+Ein späterer Live-Einsatz erfordert eine separate Betriebsentscheidung (siehe `PROJECT_STATUS.md`).

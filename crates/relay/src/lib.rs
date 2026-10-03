@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 mod ai;
 mod change;
+pub mod diagnostics;
 mod engine;
 mod exec;
 mod fsutil;
@@ -15,6 +16,7 @@ mod intent;
 mod journal;
 mod json;
 mod nix;
+pub mod protocol;
 mod sha256;
 mod source;
 mod state;
@@ -30,6 +32,7 @@ pub use change::{
 };
 pub use engine::{
     ApplyOutcome, ApplyReport, Confirmation, Engine, InitReport, PlanOutcome, RecoverEntry,
+    RecoveryPreview,
 };
 pub use exec::{Invocation, Outcome, ProcessRunner, Runner};
 pub use health::{HealthPolicy, HealthReport, HealthSnapshot, NixosVersion, SystemAdapter};

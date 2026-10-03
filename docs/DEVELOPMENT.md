@@ -120,7 +120,9 @@ Tests demonstrate safety properties, not coverage.
    (the VM has no network): candidates are NixOS specialisations selected by the content of the
    candidate's `relay/managed.nix`.
 
-Never test activation on a daily-driver system; use the VM check.
+Test activation and recovery in the VM, not on a daily-driver system. A real-system deployment is
+an operational change, not a test run; review its exact plan and recovery path separately after the
+source is known to match the running generation.
 
 ## Environment status
 

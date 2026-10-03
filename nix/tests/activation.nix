@@ -11,6 +11,8 @@
   coreutils,
   bash,
   relay,
+  agent,
+  nodejs_22,
 }:
 
 # Real activation and recovery, inside a NixOS VM (never on the host).
@@ -253,6 +255,29 @@ testers.runNixOSTest {
         assert status["running_system_path"] == base
         health = relay_json("health")
         assert health["system_state"] in ("running", "degraded"), health
+
+        with subtest("agent binary starts without Pi profile and reports read-only tools"):
+            agent_check = machine.succeed("sudo -u alice -H ${agent}/bin/relay-agent --check")
+            agent_data = json.loads(agent_check)
+            assert agent_data["piConfigLoaded"] is False, agent_data
+            assert agent_data["modelCanApply"] is False, agent_data
+            assert "relay_diagnose" in agent_data["tools"], agent_data
+            machine.fail("test -e /home/alice/.pi")
+
+        with subtest("the agent confirmation gate completes plan, apply, undo and recovery in the VM"):
+            workflow = "${nodejs_22}/bin/node ${agent}/lib/relay-agent/node_modules/tsx/dist/cli.mjs --test ${agent}/lib/relay-agent/src/workflow.integration.test.ts"
+            env = " ".join([
+                "RELAY_AGENT_WORKFLOW_TEST=1",
+                "RELAY_AGENT_FLAKE=/home/alice/config",
+                "RELAY_AGENT_HOST=machine",
+                "RELAY_AGENT_STATE_DIR=/home/alice/state/agent-workflow",
+                "RELAY_CORE_PATH=${relay}/bin/relay",
+            ])
+            command = f"{env} PATH=${nixShim}/bin:$PATH {workflow}"
+            status, output = machine.execute(ALICE + shlex.quote(command))
+            assert status == 0, output
+            assert "# pass 1" in output, output
+            assert current() == base and profile() == base
 
     with subtest("plan leaves the live system untouched"):
         plan = relay_json("plan --flake /home/alice/config --host machine add-package hello --state-dir /home/alice/state")

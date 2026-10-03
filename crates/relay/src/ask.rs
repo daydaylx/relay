@@ -95,11 +95,11 @@ pub fn ask(args: &[String]) -> Result<ExitCode, String> {
         }
         Proposal::Action(Action::Undo) => {
             eprintln!("relay: the model proposes: undo the last Relay change");
-            undo_with(&build_engine(&parsed)?, false)
+            undo_with(&build_engine(&parsed)?, false, None)
         }
         Proposal::Action(Action::Recover) => {
             eprintln!("relay: the model proposes: recover an interrupted change");
-            recover_with(&build_engine(&parsed)?, false)
+            recover_with(&build_engine(&parsed)?, false, None)
         }
         Proposal::Changes(changes) => {
             let flake = PathBuf::from(parsed.required("--flake")?);

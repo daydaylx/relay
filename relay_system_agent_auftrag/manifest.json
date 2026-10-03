@@ -1,0 +1,26 @@
+{
+  "title": "Relay System Agent Ausbau – Auftragsordner",
+  "date": "2026-10-03",
+  "target_repo": "https://github.com/daydaylx/relay",
+  "relay_baseline": "a39e473b53d1f0d044d727d66bdc002424e11cb0",
+  "agent_base": "https://pi.dev/",
+  "pi_source": "https://github.com/earendil-works/pi",
+  "explicitly_not_based_on": "https://github.com/daydaylx/pi",
+  "files": [
+    "00_START_HERE.md",
+    "01_PRODUCT_VISION.md",
+    "02_PI_CORE_ADOPTION.md",
+    "03_TARGET_ARCHITECTURE.md",
+    "04_SYSTEM_MODEL.md",
+    "05_TOOLS_AND_PERMISSIONS.md",
+    "06_ROUTER_AND_WORKFLOWS.md",
+    "07_RELAY_CORE_HARDENING.md",
+    "08_PHASE_PLAN.md",
+    "09_TEST_AND_ACCEPTANCE.md",
+    "10_REPO_RESTRUCTURE.md",
+    "11_NON_GOALS.md",
+    "12_DECISIONS_REQUIRED.md",
+    "13_MASTER_WORK_ORDER.md",
+    "README_FOR_IMPLEMENTER.md"
+  ]
+}

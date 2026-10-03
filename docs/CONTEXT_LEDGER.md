@@ -53,7 +53,14 @@ Aktivierung wird nie auf dem Daily-Driver getestet, nur in der VM.
 
 ## Offene Punkte
 
-- Daily-Driver-Pilot (Einmal-Setup, dann harmlose Änderung) steht aus.
+- Live-Aktivierung auf dem Daily Driver ist nicht validiert. Aktivierung und Recovery werden in
+  der NixOS-VM geprüft; ein späterer Einsatz ist eine separate Betriebsentscheidung, kein Test.
+- Am 2026-10-03 meldete Relay `managed_module: in-sync`, verweigerte aber Planung wegen einer
+  abweichenden ausgewerteten Quellkonfiguration. Der konkrete Unterschied liegt im `greetd`-
+  Startbefehl: `desktop.nix` enthält `--battery --asterisks`, die laufende Generation nicht.
+  Der Paketbestand ist gleich. Die separaten README-, Hyprbars- und Quickshell-Änderungen sollen
+  erhalten bleiben; Hyprbars und `minimizeWindow` waren zur Laufzeit aktiv. Ein Dry-Build war
+  erfolgreich, die NixOS-Generation wurde nicht gewechselt.
 - Lizenz: MIT. Das Repository ist öffentlich (`daydaylx/relay`). Tags erfolgen nur auf ausdrückliche
   Nutzeranweisung.
 - Provider-Qualität und Live-APIs ungetestet; Prompt/Antwort nur gegen Fakes.

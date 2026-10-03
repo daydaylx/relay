@@ -20,8 +20,20 @@ Der Stand wurde auf Anweisung des Nutzers als Baseline committet (siehe `git log
 - Neue Dateien (`nix/`, `adr/0005…`, `adr/0006…`, `docs/…`) müssen für Flake-Builds in einem
   Git-Checkout mit `git add` bekannt gemacht werden. Zum Testen ohne den Index anzufassen wurde
   eine Kopie ohne `target/` und `.git` mit `path:` gebaut.
-- Das laufende NixOS-System wurde **nie** aktiviert oder verändert. Aktivierung lief nur in der VM.
-  Das echte `/etc/nixos` (→ `/home/g/nixos-config`) wurde nur gelesen (`status --flake`).
+- Das laufende NixOS-System wurde **nie** durch Relay aktiviert oder verändert. Aktivierung lief
+  nur in der VM.
+- Am 2026-10-03 liefen `status`, `health`, `generations` und `desktop status` erfolgreich gegen
+  den Host. `managed_module` war `in-sync`; `plan add-package hello` brach wegen Source-Drift ab.
+- `/home/g/nixos-config` hat lokale Änderungen in `README.md`, `hypr/plugins.conf` und zwei
+  Quickshell-Dateien; der Nutzer entschied, sie zu behalten. Diese Dateien sind live über
+  Home-Verzeichnis-Symlinks eingebunden. Relay-Planung scheitert wegen eines separaten, echten
+  Systemunterschieds: `desktop.nix` enthält für `greetd` `tuigreet --battery --asterisks`, die
+  laufende Generation enthält diese Argumente nicht. Der Paketbestand ist gleich. Hyprbars war
+  geladen, Quickshell meldete `minimizeWindow`, und `nixos-rebuild dry-build` gelang. Relay hat
+  die NixOS-Generation nicht gewechselt.
+- Die drei neuen Rust-Module und das optionale Agent-Paket sind im Git-Index erfasst, damit Flake-
+  Builds sie sehen. `nix build .#default`, `nix build .#checks.x86_64-linux.activation -L` und
+  `nix run .#agent -- --check` liefen am 2026-10-03 erfolgreich. Nichts wurde committet.
 
 ## Was gebaut wurde
 
@@ -44,14 +56,13 @@ Wichtige Details, die man nicht aus dem Code raten sollte:
 - `systemctl is-system-running`, `list-units --output=json` und `nixos-version --json` sind die
   einzigen Laufzeitquellen für Health/Status.
 
-## Genau drei nächste Schritte
+## Nächste Schritte
 
-1. **Einmal-Setup und Pilot** auf dem echten System: `relay init --flake /etc/nixos`, `./relay/managed.nix`
-   in die Host-Module eintragen, `git add`, einmal selbst `nixos-rebuild switch`, dann eine harmlose Änderung
-   (`add-package`) mit `plan`/`show`/`apply` und `undo` durchspielen. Vorher `relay status --flake /etc/nixos`
-   prüfen (`managed_module` muss `in-sync` sein).
-2. Optional taggen (`v0.1.0` o. ä.) — nur auf ausdrückliche Anweisung des Nutzers.
-3. **Provider live ausprobieren**: `relay ask --show-prompt` ansehen, dann mit einem lokalen Modell (Ollama) oder
-   einem gehosteten Provider eine harmlose Anfrage stellen; die HTTP-Provider wurden nur gegen Fakes getestet.
-   Danach ggf. die Hyprland-Integration erweitern (Steuerung des Kompositors erst mit eigenem Recovery-Entwurf).
-
+1. Den ausstehenden `greetd`-Unterschied bewusst über NixOS aktivieren. Ein `switch` kann den
+   Display-Manager neu starten und die aktuelle grafische Sitzung beenden; dafür ist ausdrückliche
+   Zustimmung nötig.
+2. Danach Relay-Status und `plan add-package hello` erneut prüfen. Relay hat bis dahin korrekt
+   abgebrochen.
+3. Optional: den Agent-TUI-Workflow mit einem Testprovider durchspielen; Live-Provider und
+   Usability-Pilot sind gesonderte optionale Prüfungen. Release-Tags erfolgen nur auf ausdrückliche
+   Anweisung.

@@ -42,9 +42,9 @@ Activation zunächst nur in NixOS-VM/Testumgebung.
 
 ## Schritt 8
 
-Recovery.
-
-Erst wenn Recovery funktioniert, Daily-Driver-Pilot.
+Recovery in Simulator und NixOS-VM belegen. Aktivierung und Recovery nicht auf dem Daily Driver
+testen. Ein späterer Live-Einsatz ist eine separate, bewusst geprüfte Bereitstellung und kein
+Abnahmetest.
 
 ## Schritt 9
 

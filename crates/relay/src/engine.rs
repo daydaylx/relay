@@ -89,6 +89,13 @@ pub struct RecoverEntry {
     pub outcome: Option<ApplyOutcome>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryPreview {
+    pub id: String,
+    pub state: String,
+    pub summary: String,
+}
+
 pub struct Engine {
     state: StateDir,
     host: Host,
@@ -972,7 +979,16 @@ impl Engine {
     }
 
     /// Undo the most recent applied change: source and runtime together.
-    pub fn undo(&self, _confirmation: Confirmation) -> Result<ApplyReport, String> {
+    pub fn undo(&self, confirmation: Confirmation) -> Result<ApplyReport, String> {
+        self.undo_expected(None, confirmation)
+    }
+
+    /// Undo the most recent change only if it is still the change the user reviewed.
+    pub fn undo_expected(
+        &self,
+        expected_id: Option<&str>,
+        _confirmation: Confirmation,
+    ) -> Result<ApplyReport, String> {
         let _lock = self.state.lock()?;
         let journal = self.state.journal();
         let entries = journal.latest_first()?;
@@ -983,6 +999,11 @@ impl Engine {
             .iter()
             .find(|entry| entry.state == ChangeState::Switched)
             .ok_or_else(|| "there is no applied Relay change to undo".to_owned())?;
+        if expected_id.is_some_and(|expected| expected != target.id) {
+            return Err(
+                "the latest applied change changed after the preview; review it again".into(),
+            );
+        }
         let record = self.state.load_plan(&target.id)?;
         let expected_hash = record
             .source_hash_after
@@ -1022,15 +1043,63 @@ impl Engine {
 
     /// Resolve changes that were interrupted (crash, power loss) or are waiting for a reboot.
     /// Rolling back is the safe direction; a verified candidate is only ever completed forward.
+    pub fn recovery_preview(&self) -> Result<Vec<RecoveryPreview>, String> {
+        Ok(self
+            .state
+            .journal()
+            .latest_first()?
+            .into_iter()
+            .filter_map(|entry| {
+                let summary = match entry.state {
+                    ChangeState::Planned => "close the abandoned plan without changing the system",
+                    ChangeState::Built => "close the abandoned candidate without changing the system",
+                    state if state.is_in_flight() => "resolve from recorded source and runtime evidence; recovery may complete a verified change or roll it back",
+                    _ => return None,
+                };
+                Some(RecoveryPreview {
+                    id: entry.id,
+                    state: entry.state.as_str().to_owned(),
+                    summary: summary.to_owned(),
+                })
+            })
+            .collect())
+    }
+
     pub fn recover(&self, abort_pending_reboot: bool) -> Result<Vec<RecoverEntry>, String> {
+        self.recover_expected(None, abort_pending_reboot)
+    }
+
+    /// Resolve only the pending set that was shown to the user for confirmation.
+    pub fn recover_expected(
+        &self,
+        expected_ids: Option<&[String]>,
+        abort_pending_reboot: bool,
+    ) -> Result<Vec<RecoverEntry>, String> {
         let _lock = self.state.lock()?;
         let journal = self.state.journal();
         let mut results = Vec::new();
         let mut entries = journal.entries()?.into_values().collect::<Vec<_>>();
         entries.sort_by(|a, b| a.id.cmp(&b.id));
+        if let Some(expected_ids) = expected_ids {
+            let actual = entries
+                .iter()
+                .filter(|entry| {
+                    matches!(entry.state, ChangeState::Planned | ChangeState::Built)
+                        || entry.state.is_in_flight()
+                })
+                .map(|entry| entry.id.clone())
+                .collect::<Vec<_>>();
+            let mut expected = expected_ids.to_vec();
+            expected.sort();
+            if expected != actual {
+                return Err(
+                    "the pending recovery set changed after the preview; review it again".into(),
+                );
+            }
+        }
         for entry in entries {
             match entry.state {
-                ChangeState::Planned => {
+                ChangeState::Planned | ChangeState::Built => {
                     journal.transition(
                         &entry.id,
                         ChangeState::Failed,
@@ -1041,7 +1110,11 @@ impl Engine {
                     self.state.remove_candidate(&entry.id);
                     results.push(RecoverEntry {
                         id: entry.id,
-                        summary: "abandoned plan closed".to_owned(),
+                        summary: if entry.state == ChangeState::Built {
+                            "abandoned candidate closed".to_owned()
+                        } else {
+                            "abandoned plan closed".to_owned()
+                        },
                         outcome: None,
                     });
                 }

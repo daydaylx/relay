@@ -5,6 +5,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// Environment variables that could weaken NixOS' own pre-switch safety checks. They are removed
@@ -29,6 +30,7 @@ pub struct Invocation {
     privileged: bool,
     stdin: Option<Input>,
     timeout: Option<Duration>,
+    output_limit: Option<usize>,
 }
 
 impl Invocation {
@@ -40,6 +42,7 @@ impl Invocation {
             privileged: false,
             stdin: None,
             timeout: None,
+            output_limit: None,
         }
     }
 
@@ -80,6 +83,12 @@ impl Invocation {
     /// Kill the child and report an error if it runs longer than `limit`.
     pub fn timeout(mut self, limit: Duration) -> Self {
         self.timeout = Some(limit);
+        self
+    }
+
+    /// Fail and stop the child when either stdout or stderr exceeds this number of bytes.
+    pub fn output_limit(mut self, limit: usize) -> Self {
+        self.output_limit = Some(limit);
         self
     }
 
@@ -183,7 +192,10 @@ impl Runner for ProcessRunner {
             };
             format!("could not start {program}: {error}")
         };
-        if invocation.stdin.is_none() && invocation.timeout.is_none() {
+        if invocation.stdin.is_none()
+            && invocation.timeout.is_none()
+            && invocation.output_limit.is_none()
+        {
             let output = command.output().map_err(start_error)?;
             return Ok(Outcome {
                 code: output.status.code(),
@@ -217,11 +229,24 @@ fn run_supervised(
             let _ = pipe.write_all(&data);
         })
     });
+    let (limit_sender, limit_receiver) = mpsc::channel();
     let reader = |pipe: Option<Box<dyn Read + Send>>| {
+        let limit_sender = limit_sender.clone();
+        let output_limit = invocation.output_limit;
         std::thread::spawn(move || {
             let mut buffer = Vec::new();
             if let Some(mut pipe) = pipe {
-                let _ = pipe.read_to_end(&mut buffer);
+                if let Some(limit) = output_limit {
+                    let _ = pipe
+                        .take(limit.saturating_add(1) as u64)
+                        .read_to_end(&mut buffer);
+                    if buffer.len() > limit {
+                        let _ = limit_sender.send(());
+                        buffer.truncate(limit);
+                    }
+                } else {
+                    let _ = pipe.read_to_end(&mut buffer);
+                }
             }
             buffer
         })
@@ -240,6 +265,15 @@ fn run_supervised(
     );
     let deadline = invocation.timeout.map(|limit| Instant::now() + limit);
     let status = loop {
+        if invocation.output_limit.is_some() && limit_receiver.try_recv().is_ok() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "{} exceeded its output limit of {} bytes",
+                invocation.program,
+                invocation.output_limit.unwrap_or_default()
+            ));
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {}
@@ -265,10 +299,19 @@ fn run_supervised(
     if let Some(writer) = writer {
         let _ = writer.join();
     }
+    let stdout = stdout.join().unwrap_or_default();
+    let stderr = stderr.join().unwrap_or_default();
+    if invocation.output_limit.is_some() && limit_receiver.try_recv().is_ok() {
+        return Err(format!(
+            "{} exceeded its output limit of {} bytes",
+            invocation.program,
+            invocation.output_limit.unwrap_or_default()
+        ));
+    }
     Ok(Outcome {
         code: status.code(),
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
+        stdout,
+        stderr,
     })
 }
 
@@ -349,6 +392,21 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("did not finish"), "{error}");
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn output_limit_stops_a_chatty_child_and_bounds_captured_data() {
+        let started = std::time::Instant::now();
+        let error = ProcessRunner::default()
+            .run(
+                &Invocation::new("sh")
+                    .args(["-c", "yes | head -c 1048576"])
+                    .timeout(std::time::Duration::from_secs(5))
+                    .output_limit(1024),
+            )
+            .unwrap_err();
+        assert!(error.contains("exceeded its output limit"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]

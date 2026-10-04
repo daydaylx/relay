@@ -223,6 +223,9 @@ fn build_invocation(
         "/nix".to_owned(),
         "--dir".to_owned(),
         "/nix/store".to_owned(),
+        "--chmod".to_owned(),
+        "0555".to_owned(),
+        "/nix/store".to_owned(),
     ];
     for path in closure {
         let name = path
@@ -347,6 +350,7 @@ mod tests {
             "--cap-drop",
             "--tmpfs",
             "--ro-bind",
+            "0555",
             "MemoryMax=512M",
             "TasksMax=64",
         ] {
@@ -359,6 +363,8 @@ mod tests {
         for forbidden in ["/home", "/etc", "/run", "/nix/var/nix/daemon-socket"] {
             assert!(!args.iter().any(|arg| arg == forbidden));
         }
+        let chmod = args.iter().position(|arg| arg == "--chmod").unwrap();
+        assert_eq!(&args[chmod..chmod + 3], &["--chmod", "0555", "/nix/store"]);
     }
 
     #[test]
@@ -370,11 +376,63 @@ mod tests {
         let result = sandbox
             .run(
                 "bash",
-                &["-c".into(), "test ! -e /etc/passwd && test ! -e /home && test ! -e /run && test -e /sys/devices/system/cpu/online && test ! -e /sys/firmware/efi/efivars && echo okay >/tmp/relay-observe && test -f /tmp/relay-observe && ! echo x >/etc/relay-observe && ! echo 0 >/sys/devices/system/cpu/online && ! echo x >/dev/tcp/1.1.1.1/80 && echo sandbox-ok".into()],
+                &["-c".into(), "test ! -e /etc/passwd && test ! -e /home && test ! -e /root && test ! -e /run && test ! -e /var && test ! -e /mnt && test ! -e /media && test ! -S /nix/var/nix/daemon-socket/socket && test ! -w /nix/store && test -e /sys/devices/system/cpu/online && test ! -e /sys/firmware/efi/efivars && echo okay >/tmp/relay-observe && test -f /tmp/relay-observe && ! (echo x 2>/dev/null >/etc/relay-observe) && ! (echo x 2>/dev/null >/nix/store/relay-observe-probe) && ! (echo 0 2>/dev/null >/sys/devices/system/cpu/online) && ! (echo x 2>/dev/null >/dev/tcp/1.1.1.1/80) && echo sandbox-ok".into()],
             )
             .expect("configured host sandbox should run");
         assert_eq!(result.code, Some(0), "{}", result.stderr);
         assert!(result.stdout.contains("sandbox-ok"));
+
+        let process_view = sandbox
+            .run(
+                "bash",
+                &["-c".into(), "read -r comm </proc/1/comm; echo private-proc-ok; printf 'pid1=<%s>\\n' \"$comm\"".into()],
+            )
+            .expect("private process view should be available");
+        assert_eq!(
+            process_view.code,
+            Some(0),
+            "stdout={:?} stderr={:?}",
+            process_view.stdout,
+            process_view.stderr
+        );
+        assert!(process_view.stdout.contains("private-proc-ok"));
+        let host_init = std::fs::read_to_string("/proc/1/comm").expect("host procfs is available");
+        let sandbox_init = process_view
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("pid1=<")?.strip_suffix('>'))
+            .expect("sandbox process namespace reports its own init");
+        assert_ne!(
+            sandbox_init,
+            host_init.trim(),
+            "sandbox must not expose host PID 1"
+        );
+
+        let environment = sandbox
+            .run("env", &[])
+            .expect("sanitized environment should be available");
+        assert_eq!(environment.code, Some(0), "{}", environment.stderr);
+        let variables = environment.stdout.lines().collect::<Vec<_>>();
+        assert_eq!(variables.len(), 4, "{variables:?}");
+        assert!(variables.iter().any(|value| value == &"HOME=/tmp"));
+        assert!(variables.iter().any(|value| value == &"TMPDIR=/tmp"));
+        assert!(variables.iter().any(|value| value == &"PWD=/tmp"));
+        assert!(variables.iter().any(|value| value.starts_with("PATH=")));
+
+        let temporary_write = sandbox
+            .run(
+                "bash",
+                &["-c".into(), "echo private >/tmp/relay-ephemeral".into()],
+            )
+            .expect("disposable tmpfs should permit scratch output");
+        assert_eq!(temporary_write.code, Some(0), "{}", temporary_write.stderr);
+        let next_sandbox = sandbox
+            .run(
+                "bash",
+                &["-c".into(), "test ! -e /tmp/relay-ephemeral".into()],
+            )
+            .expect("each command should receive a fresh tmpfs");
+        assert_eq!(next_sandbox.code, Some(0), "{}", next_sandbox.stderr);
 
         let nested_userns = sandbox
             .run(
@@ -387,5 +445,22 @@ mod tests {
             Some(0),
             "nested user namespaces must be disabled"
         );
+
+        for (program, args) in [
+            ("unshare", vec!["--mount".into(), "true".into()]),
+            (
+                "mount",
+                vec!["--bind".into(), "/nix/store".into(), "/tmp".into()],
+            ),
+        ] {
+            let escape_attempt = sandbox
+                .run(program, &args)
+                .expect("escape attempt should start only inside the sandbox");
+            assert_ne!(
+                escape_attempt.code,
+                Some(0),
+                "{program} must not gain mount capabilities"
+            );
+        }
     }
 }

@@ -13,8 +13,9 @@ Pfad.
 Shell-/Interpreter-Kommandos sind wegen Expansion, Pipes, redirection, Kindern und Plugins nicht
 vollständig per Whitelist klassifizierbar. `OBSERVE`-Programme laufen daher in einer OS-erzwungenen,
 read-only Bubblewrap-Sandbox. Sie erhalten nur den rekursiven Nix-Store-Closure des ausgewählten
-Programms, ausgewählte read-only Hardware-Bäume (`/sys/devices`, `class`, `bus`, `block`, `dev`,
-`module`), einen privaten `/proc`- und `/dev`-Baum sowie ein verworfenes `/tmp`. `/sys/firmware`,
+Programms unter einem nicht beschreibbaren `/nix/store`-Verzeichnis, ausgewählte read-only
+Hardware-Bäume (`/sys/devices`, `class`, `bus`, `block`, `dev`, `module`), einen privaten `/proc`-
+und `/dev`-Baum sowie ein verworfenes `/tmp`. `/sys/firmware`,
 `/sys/fs`, Netzwerk, `/home`, `/etc`, `/run`, D-Bus-, Wayland- und Nix-Daemon-Sockets sind nicht eingebunden.
 Ein User-systemd-Scope erzwingt Speicher-, Prozesszahl- und CPU-Grenzen; Relay erzwingt zusätzlich
 Zeit- und Ausgabegrenzen. Ohne Bubblewrap oder User-systemd-Scope wird OBSERVE verweigert.
@@ -22,8 +23,15 @@ Kontrollierte User Writes laufen später über begrenzte, transaktionale Writabl
 Runtime Mutations verwenden getypte Relay-Adapter; Nix Changes den vorhandenen Candidate Core.
 
 Umgesetzt ist zunächst nur ein read-only `relay_observe_command` für strukturierte Programm-/Argument-
-Aufrufe; es gibt keinen Host-Shell-, Datei-Schreib- oder Service-Mutationspfad. Unit- und explizite
-Host-Smoke-Tests prüfen Mount-, Netzwerk-, Schreib- und User-Namespace-Grenzen. Das ist noch keine
+Aufrufe; es gibt keinen Host-Shell-, Datei-Schreib- oder Service-Mutationspfad. Der explizite
+NixOS-Host-Smoke-Test prüft, dass `/etc`, `/home` und `/run` fehlen, ausgewählte Sysfs-Metadaten
+lesbar bleiben, EFI-Variablen nicht sichtbar sind, Schreibversuche auf Hostdateien und Sysfs scheitern,
+Netzwerkzugriff scheitert und auch das `/nix/store`-Wurzelverzeichnis nicht beschreibbar ist. `/proc`
+zeigt eine private PID-Ansicht, nur vier erwartete Umgebungsvariablen sind vorhanden und `/tmp` wird
+pro Aufruf verworfen. Der Test prüft außerdem, dass Kindprozesse keine neuen
+User-/Mount-Namespaces und keine Mounts einrichten können. Diese expliziten Hosttests bestanden am
+2026-10-04. Sie erhöhen die Escape-Abdeckung, sind aber kein vollständiger Kernel- oder Sandbox-Audit
+und beweisen keine allgemeine Sicherheit gegen unbekannte Kernel-Lücken. Das ist weiterhin keine
 Freigabe für User-Dateimutationen, privilegierte Befehle oder uneingeschränkte Agenten-Werkzeuge.
 Pi/RPC-Prozessgrenze allein ist keine Sandbox.
 

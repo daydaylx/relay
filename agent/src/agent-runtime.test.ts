@@ -5,11 +5,17 @@ import { join } from "node:path";
 import test from "node:test";
 import { createAssistantMessageEventStream, type AssistantMessage, type JsonObject, type Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { createTaskAgent } from "./agent-runtime.js";
+import { createTaskAgent, relaySystemPrompt } from "./agent-runtime.js";
 import { RelayBridge } from "./bridge.js";
 import { createRelayTools } from "./relay-tools.js";
 import { TaskService } from "./task-service.js";
 import { TaskStore } from "./task.js";
+
+test("agent prompt describes the OBSERVE command boundary without implying host access", () => {
+  assert.match(relaySystemPrompt, /read-only Bubblewrap sandbox/);
+  assert.match(relaySystemPrompt, /no host shell, host filesystem, network/);
+  assert.match(relaySystemPrompt, /There is no host file write, MCP/);
+});
 
 test("Pi Agent keeps one task open across package search, plan, confirmed apply and post-apply verification", async () => {
   const root = mkdtempSync(join(tmpdir(), "relay-agent-loop-"));

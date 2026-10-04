@@ -50,9 +50,12 @@ Die breitere Zielarchitektur ergänzt danach vollständige Ownership-Auflösung,
 User-Dateiänderungen sowie Relay-eigenes MCP/Web-Wissen. Pi RPC ist bereits der normale Task-Agent
 und erhält Relay-eigene Tools über eine isolierte Extension und einen privaten Socket. Ein erster
 verifizierter SystemContext wird bei Taskstart injiziert und journalisiert. Das Execution Gateway
-hat nun einen ersten OBSERVE-Pfad: ausgewählte Diagnoseprogramme laufen in Bubblewrap mit begrenztem
-Nix-Closure, getrennten Namespaces, ohne Host-Netzwerk und ohne Zugriff auf `/home`, `/etc`, `/run`,
-EFI-Variablen oder Cgroup-Sysfs. User-Datei- und Root-Mutationen bleiben gesperrt. Ist-/Soll-Audit und Migrationsphasen stehen in
+hat nun einen ersten OBSERVE-Pfad: ausgewählte Diagnoseprogramme laufen in Bubblewrap mit begrenztem,
+nicht beschreibbarem Nix-Closure, getrennten Namespaces, ohne Host-Netzwerk und ohne Zugriff auf
+`/home`, `/etc`, `/run`, EFI-Variablen oder Cgroup-Sysfs. Der explizite Host-Smoke-Test prüft zusätzlich private PID-,
+Umgebungs- und `/tmp`-Ansichten sowie blockierte Namespace- und Mount-Escapes. Das ist kein
+vollständiger Kernel-Sandbox-Audit. User-Datei- und Root-Mutationen bleiben gesperrt. Ist-/Soll-Audit
+und Migrationsphasen stehen in
 [`docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md`](docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md)
 und [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 

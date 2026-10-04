@@ -16,10 +16,12 @@ and [the audit](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
 The expanded target also includes an initial SystemContext, a conservative metadata-only Ownership
 Resolver and the first OBSERVE Execution Gateway: structured diagnostic commands run through
-Bubblewrap with restricted Nix closures and resource limits. Full operation evidence, adversarial
-escape coverage, automatic source-of-truth mapping, file transactions, full Desired State, versioned
-Knowledge, MCP/Web and a Privilege Broker remain open. No host-mutating Bash, MCP, Web fetch or User
-Config write is enabled.
+Bubblewrap with restricted read-only Nix closures and resource limits. The explicit host smoke suite
+now checks private PID/environment/tmpfs views, host-path and sysfs write denial, network denial, and
+attempts to create nested namespaces or mounts. This is additional escape coverage, not a complete
+kernel sandbox audit. Full operation evidence, automatic source-of-truth mapping, file transactions, full
+Desired State, versioned Knowledge, MCP/Web and a Privilege Broker remain open. No host-mutating Bash,
+MCP, Web fetch or User Config write is enabled.
 See the staged gates in [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 
 Relay observes the system, plans a typed change in an isolated candidate, evaluates and builds it,
@@ -54,7 +56,7 @@ not switched the system generation. Real Relay activation was only ever exercise
 ## Test status
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-and `nix build .#default` pass (178 library and 13 CLI tests; Agent typecheck and 35 tests pass with
+and `nix build .#default` pass (178 library and 13 CLI tests; Agent typecheck and 36 tests pass with
 one existing opt-in test skipped). The explicit host OBSERVE smoke test also passes against real
 Bubblewrap/user-systemd. See `docs/DEVELOPMENT.md` for the safety-test mapping. The VM check passed on
 2026-10-03 on the development machine (KVM, about five minutes).

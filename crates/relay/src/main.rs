@@ -38,6 +38,10 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         "--help" | "help" => println!("{}", usage()),
         "--version" | "version" => println!("relay {}", env!("CARGO_PKG_VERSION")),
         "agent" => return launch_agent(rest),
+        "context" => {
+            let agent_args = context_agent_args(rest)?;
+            return launch_agent(&agent_args);
+        }
         "status" => status(rest)?,
         "generations" => list_generations(rest)?,
         "health" => health(rest)?,
@@ -67,6 +71,15 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         _ => return Err(format!("unknown command '{command}'\n{}", usage())),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn context_agent_args(args: &[String]) -> Result<Vec<String>, String> {
+    if !args.is_empty() && (args.len() != 1 || args[0] != "--json") {
+        return Err("usage: relay context [--json]".into());
+    }
+    let mut agent_args = vec!["--context".to_owned()];
+    agent_args.extend_from_slice(args);
+    Ok(agent_args)
 }
 
 fn launch_agent(args: &[String]) -> Result<ExitCode, String> {
@@ -818,7 +831,8 @@ fn optional_strings_json(values: Option<&[String]>) -> String {
 }
 
 fn usage() -> &'static str {
-    "usage: relay status [--root PATH] [--flake PATH] [--state-dir DIR]
+    "usage: relay context [--json]
+       relay status [--root PATH] [--flake PATH] [--state-dir DIR]
        relay generations [--root PATH]
        relay health
        relay diagnose --topic network|bluetooth|hardware|processes|package|journal|desktop [--filter NAME] [--unit UNIT] [--limit N]
@@ -839,6 +853,25 @@ fn usage() -> &'static str {
        relay desktop <status|health>
        relay protocol --stdio  # newline-delimited JSON protocol v1
        relay <help|--help|version|--version>"
+}
+
+#[cfg(test)]
+mod context_command_tests {
+    use super::context_agent_args;
+
+    #[test]
+    fn context_command_forwards_only_json_mode() {
+        assert_eq!(
+            context_agent_args(&[]).unwrap(),
+            vec!["--context".to_owned()]
+        );
+        assert_eq!(
+            context_agent_args(&["--json".to_owned()]).unwrap(),
+            vec!["--context".to_owned(), "--json".to_owned()]
+        );
+        assert!(context_agent_args(&["--anything".to_owned()]).is_err());
+        assert!(context_agent_args(&["--json".to_owned(), "--json".to_owned()]).is_err());
+    }
 }
 
 #[cfg(test)]

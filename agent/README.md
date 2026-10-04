@@ -26,6 +26,8 @@ configuration revisions, generations, hardware and desktop summaries, capabiliti
 currently known ownership boundary. `relay_resolve_ownership` classifies requested paths from
 filesystem metadata only; it does not inspect file contents. Unknown Home Manager/user configuration
 remains read-only, and the resolver does not yet prove source ownership through flake evaluation.
+`relay context` displays this same verified snapshot for the user; `relay context --json` emits its
+structured form. Both commands use the existing read-only Relay Core adapters.
 
 ## Runtime and task flow
 

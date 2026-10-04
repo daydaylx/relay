@@ -11,11 +11,13 @@ import { MutationGate } from "./mutation-gate.js";
 import { TaskService } from "./task-service.js";
 import { PiRpcClient } from "./pi-rpc.js";
 import { RelayToolBridge } from "./tool-bridge.js";
+import { renderSystemContext } from "./context-command.js";
 
 const help = `Relay system assistant
 
 Usage:
   relay [--init-config] [--check | --pi-rpc-check]
+  relay context [--json]
   relay /tasks
   relay /resume TASK_ID
   relay-agent [--init-config] [--check]
@@ -30,7 +32,8 @@ async function main(args: string[]): Promise<number> {
     stdout.write(help);
     return 0;
   }
-  if (args.some((arg) => !["--init-config", "--check", "--pi-rpc-check"].includes(arg)) || args.includes("--check") && args.includes("--pi-rpc-check")) {
+  const modes = ["--init-config", "--check", "--pi-rpc-check", "--context"].filter((flag) => args.includes(flag));
+  if (args.some((arg) => !["--init-config", "--check", "--pi-rpc-check", "--context", "--json"].includes(arg)) || modes.length > 1 || args.includes("--json") && !args.includes("--context")) {
     stdout.write(help);
     return 2;
   }
@@ -45,6 +48,15 @@ async function main(args: string[]): Promise<number> {
   const taskService = new TaskService();
   let requestMutationConfirmation: (details: { action: "apply" | "undo" | "recover"; taskId: string; target: string; risk: string; review: string; reviewHash: string }, signal?: AbortSignal) => Promise<boolean> = async () => false;
   const tools = createRelayTools(bridge, { task: taskService, configRoot: config.flake, confirmMutation: (details, signal) => requestMutationConfirmation(details, signal) });
+  if (args.includes("--context")) {
+    const contextTool = tools.find((tool) => tool.name === "relay_system_context");
+    if (!contextTool) throw new Error("Relay verified system context tool is missing");
+    const contextResult = await contextTool.execute("context-cli", {}, new AbortController().signal);
+    const contextText = contextResult.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+    const systemContext = JSON.parse(contextText) as Record<string, unknown>;
+    stdout.write(args.includes("--json") ? `${JSON.stringify(systemContext, null, 2)}\n` : renderSystemContext(systemContext));
+    return 0;
+  }
   if (args.includes("--check")) {
     stdout.write(JSON.stringify({
       product: "relay",

@@ -79,6 +79,8 @@ relay apply <id> --expect-active bluetooth.service
 
 relay undo                       # Source + Runtime zurück
 relay recover                    # nach Absturz/Stromausfall
+relay context                    # verifizierten Systemzustand und Ownership anzeigen
+relay context --json              # denselben SystemContext strukturiert ausgeben
 ```
 
 Optional – natürliche Sprache (das Modell schlägt nur vor, Relay prüft, plant und fragt nach):

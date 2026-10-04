@@ -6,7 +6,7 @@ Relay is a dependency-free Rust workspace (standard library only). It requires R
 newer (edition 2024). On NixOS use the flake's dev shell:
 
 ```sh
-nix develop            # cargo, rustc, clippy, rustfmt
+nix develop            # cargo, rustc, clippy, rustfmt, Bubblewrap OBSERVE-Sandbox
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -17,6 +17,15 @@ The GitHub Actions workflow runs the same four checks. No system packages or Nix
 used by CI.
 
 ## Nix checks
+
+Agent `observe` protocol requests run a selected system-profile program with structured argv.
+Bubblewrap is supplied by the Nix package/dev shell, and a live user-systemd manager is required for
+Memory/Tasks/CPU limits. The command fails closed if either dependency or user namespaces are
+unavailable. Run the host-only boundary smoke test with:
+
+```sh
+nix develop --command env RELAY_RUN_SANDBOX_SMOKE=1 cargo test -p relay sandbox_host_smoke
+```
 
 ```sh
 nix build .#default                       # package; runs the Rust tests in the sandbox
@@ -32,6 +41,7 @@ New files must be tracked by Git (`git add`) before a flake in a Git checkout ca
 | `lib.rs` | observer: `system_summary`, `generations`, live status sources |
 | `nix.rs` | **the only place that builds Nix/NixOS command lines**; typed privileged actions |
 | `exec.rs` | `Runner` seam (real processes, `sudo` escalation, `NIXOS_NO_CHECK` scrubbing) |
+| `sandbox.rs` | read-only OBSERVE process scope: Bubblewrap namespaces, restricted Nix closure, resource/output/deadline bounds |
 | `change.rs` | typed changes, protected-resource policy, risk classes, strict `managed.nix` renderer/parser |
 | `intent.rs` | strict JSON intent schema (what a script or optional AI provider may submit) |
 | `source.rs` | source tree listing (what Nix sees), content identity, isolated candidate copies |

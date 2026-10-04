@@ -11,17 +11,25 @@ und Shell-Werkzeuge kombinieren. Kein Modellaufruf erhält einen nackten Host-Su
 Pfad.
 
 Shell-/Interpreter-Kommandos sind wegen Expansion, Pipes, redirection, Kindern und Plugins nicht
-vollständig per Whitelist klassifizierbar. `OBSERVE`-Bash läuft daher in einer OS-erzwungenen, read-
-only Linux Sandbox mit deny-read Secrets, getrennten Namespaces, limits und gesperrten mutierenden
-System-/Session-Sockets. Kontrollierte User Writes laufen über begrenzte, transaktionale Writable Scopes.
+vollständig per Whitelist klassifizierbar. `OBSERVE`-Programme laufen daher in einer OS-erzwungenen,
+read-only Bubblewrap-Sandbox. Sie erhalten nur den rekursiven Nix-Store-Closure des ausgewählten
+Programms, ausgewählte read-only Hardware-Bäume (`/sys/devices`, `class`, `bus`, `block`, `dev`,
+`module`), einen privaten `/proc`- und `/dev`-Baum sowie ein verworfenes `/tmp`. `/sys/firmware`,
+`/sys/fs`, Netzwerk, `/home`, `/etc`, `/run`, D-Bus-, Wayland- und Nix-Daemon-Sockets sind nicht eingebunden.
+Ein User-systemd-Scope erzwingt Speicher-, Prozesszahl- und CPU-Grenzen; Relay erzwingt zusätzlich
+Zeit- und Ausgabegrenzen. Ohne Bubblewrap oder User-systemd-Scope wird OBSERVE verweigert.
+Kontrollierte User Writes laufen später über begrenzte, transaktionale Writable Scopes.
 Runtime Mutations verwenden getypte Relay-Adapter; Nix Changes den vorhandenen Candidate Core.
 
-Bis Linux Enforcement, Scope Leakage und adversariale Escape-Tests bestehen, bleibt der bisherige
-kleinere Read-Only-Toolpfad verfügbar und allgemeine Bash-Mutation gesperrt. Pi/RPC-Prozessgrenze allein
-ist keine Sandbox.
+Umgesetzt ist zunächst nur ein read-only `relay_observe_command` für strukturierte Programm-/Argument-
+Aufrufe; es gibt keinen Host-Shell-, Datei-Schreib- oder Service-Mutationspfad. Unit- und explizite
+Host-Smoke-Tests prüfen Mount-, Netzwerk-, Schreib- und User-Namespace-Grenzen. Das ist noch keine
+Freigabe für User-Dateimutationen, privilegierte Befehle oder uneingeschränkte Agenten-Werkzeuge.
+Pi/RPC-Prozessgrenze allein ist keine Sandbox.
 
 ## Konsequenzen
 
 `python`, `bash`, `node` oder `git` werden nach Pfad, argv, cwd, env, file descriptors, target, Privilege
 und Sandbox-Profil beurteilt. Parserklassifikation unterstützt Review, ist aber nie der alleinige
-Schutz. Sandbox Backend muss NixOS und unprivilegierte User Namespaces praktisch nachweisen.
+Schutz. Das Backend verlangt ein echtes unprivilegiertes User Namespace, verbietet weitere User
+Namespaces im Kindprozess und lehnt fehlende User-systemd-Ressourcengrenzen geschlossen ab.

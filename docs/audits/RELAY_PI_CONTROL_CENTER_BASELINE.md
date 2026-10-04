@@ -58,8 +58,8 @@ Abhängigkeit auf "latest".
 | Pi RPC Runtime + Relay Sessions | eingebetteter Agent Loop, Provider-Adapter, TUI | CLI als exakte Repository-Abhängigkeit, RPC framing/client, isolierter Runtime-Prozess, Relay Sessions und sichere Recovery | Relay Runtime / ADR 0011 |
 | SystemContext | `status`, Host-/Nix-Metadaten, generations, diagnostics, Hyprland summary | typisierte Snapshot-Fakten samt Provenance, TTL, system/config identity, capabilities, policy, history und aktuellem task context | Relay Core / ADR 0012 |
 | Ownership Map | strikter `relay/managed.nix` Scope und source drift | NixOS/Home Manager/User/Generated/Unknown Zuordnung; nur fundierte Quellen werden als verifiziert registriert | Resolver / ADR 0013 |
-| Execution Gateway | getypter Nix-Protokoll, `Runner`, Prozessfristen, Core Policies | gemeinsamer Operationstyp, Klassifikation über executable/args/env/cwd/paths/privilege/target; Policy-Enforcement und Evidence/Journaling | Rust Gateway / ADR 0014 |
-| Bash/read/write/edit/search/process | begrenzte Safe-Read und Core `Runner` | Relay-gebrandete Tools über Gateway; systemnahe Sandboxing/Writable scopes, keine naiven String-Whitelists | Gateway adapters / ADR 0015 |
+| Execution Gateway | getypter Nix-Protokoll, `Runner`, Prozessfristen, Core Policies; erster `observe`-Pfad mit Bubblewrap + User-systemd Ressourcenlimits | vollständige Operationstypen, Evidence/Journaling, adversariale Escape-Suite und spätere Mutation-Profile | Rust Gateway / ADR 0014 |
+| Bash/read/write/edit/search/process | begrenzte Safe-Read, Nix-Closure-gebundene Shell-/Prozessdiagnose in read-only Sandbox | weitere Relay-gebrandete Tools über Gateway; transaktionale Writable scopes, keine naiven String-Whitelists | Gateway adapters / ADR 0015 |
 | File Transactions | nur managed Nix Source/Runtime Recovery | private Before-/After-Metadaten, atomic replacement, foreign-edit hash check, directory/permission/link policy, recovery journal | Transaction layer / ADR 0016 |
 | Task + Desired State | Task JSONL und vier konkrete Checks | desired-state data, hypotheses vs facts, Research/Evidence/Actions, unbegrenzte abgeschlossene Schritte innerhalb fester Sicherheitsbudgets, continue/stop/recover | Controller / ADR 0017 |
 | System Knowledge / Evidence | `nixpkgs`-revisiongebundener Options-/Paketindex | Fakten- und Quellenhierarchie, NixOS/Hyprland/systemd-Manpages, veraltete Daten erkennen, Claims mit applicability/URL/version/time | Knowledge / ADR 0018 |
@@ -77,9 +77,10 @@ sind als Operationen nicht statisch vollständig klassifizierbar. Daher ist der 
 Kombination aus strukturierter Intent-Klassifikation, Linux OS-Enforcement, scopes und Nachher-
 Beobachtung:
 
-1. **OBSERVE:** lesender Host-Kontext über schmale Adapter; Shell-/Interpreter-Prozesse laufen nur
-   unter einer OS-Read-Sandbox mit geheimen Pfaden gesperrt, zeit-/ressourcenbegrenzt und ohne
-   mutierende System-Sockets.
+1. **OBSERVE:** lesender Host-Kontext über schmale Adapter; erste strukturierte Shell-/Interpreter-
+   Diagnose läuft in Bubblewrap mit begrenztem Nix-Closure, ausgewählten read-only Hardware-Bäumen,
+   privaten Namespaces, ohne Netzwerk oder geheime Pfade und mit Zeit-/Ressourcenlimits. Evidence
+   und die adversariale Escape-Suite bleiben offen.
 2. **CONTROL:** High-Level Relay-Aktionen zuerst. User-Config-Aktionen verwenden Ownership-Resolver
    und File Transactions. Runtime-Aktionen wie Service-/Hyprland-Steuerung nutzen konkrete Adapter.
    Managed Nix Änderungen bleiben vollständig im bestehenden Candidate/Safety Core.

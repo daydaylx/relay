@@ -39,6 +39,7 @@ test("model tools exclude mutation and keep paths and exact diff values out of m
     "relay_diagnose",
     "relay_search_option",
     "relay_search_package",
+    "relay_observe_command",
     "relay_plan_change",
     "relay_show_plan",
   ]);
@@ -59,6 +60,26 @@ test("model tools exclude mutation and keep paths and exact diff values out of m
   assert.equal(planText.includes("sample-token-value"), false);
   assert.equal(planText.includes("private-candidate"), false);
   assert.equal(JSON.stringify(plan.details).includes("sample-token-value"), true);
+});
+
+test("sandboxed observe tool sends structured arguments and suppresses likely secrets", async () => {
+  const calls: Array<{ action: string; params: Record<string, unknown> }> = [];
+  const fake = {
+    async request(action: string, params: Record<string, unknown> = {}) {
+      calls.push({ action, params });
+      return { exit_code: 0, stdout: "diagnostic output", stderr: "" };
+    },
+  } as unknown as RelayBridge;
+  const tool = createRelayTools(fake).find((item) => item.name === "relay_observe_command");
+  assert.ok(tool);
+  const response = await tool.execute("o", { program: "journalctl", args: ["--boot", "-n", "5"] }, undefined, undefined);
+  assert.deepEqual(calls, [{ action: "observe", params: { program: "journalctl", args: ["--boot", "-n", "5"] } }]);
+  assert.match(JSON.stringify(response.content), /diagnostic output/);
+
+  (fake as unknown as { request: () => Promise<unknown> }).request = async () => ({ exit_code: 0, stdout: "api_key = \"sample-secret-value\"", stderr: "" });
+  const secret = await tool.execute("o", { program: "cat", args: ["/tmp/example"] }, undefined, undefined);
+  assert.equal(JSON.stringify(secret.content).includes("sample-secret-value"), false);
+  assert.equal(JSON.stringify(secret.content).includes("output_suppressed"), true);
 });
 
 test("20 diagnostic questions call only read-only Relay protocol actions", async () => {

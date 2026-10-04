@@ -16,6 +16,7 @@ pub enum Action {
     Diagnose,
     SearchOption,
     SearchPackage,
+    Observe,
     Plan,
     Show,
     Discard,
@@ -36,6 +37,7 @@ impl Action {
             Self::Diagnose => "diagnose",
             Self::SearchOption => "search_option",
             Self::SearchPackage => "search_package",
+            Self::Observe => "observe",
             Self::Plan => "plan",
             Self::Show => "show",
             Self::Discard => "discard",
@@ -69,6 +71,8 @@ pub struct Request {
     pub diagnostic_topic: Option<String>,
     pub diagnostic_unit: Option<String>,
     pub query: Option<String>,
+    pub observe_program: Option<String>,
+    pub observe_args: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,6 +152,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         "diagnose" => Action::Diagnose,
         "search_option" => Action::SearchOption,
         "search_package" => Action::SearchPackage,
+        "observe" => Action::Observe,
         "plan" => Action::Plan,
         "show" => Action::Show,
         "discard" => Action::Discard,
@@ -175,6 +180,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         Action::Generations => &["root"],
         Action::Diagnose => &["root", "topic", "filter", "unit", "limit"],
         Action::SearchOption | Action::SearchPackage => &["flake", "host", "query", "limit"],
+        Action::Observe => &["program", "args"],
         Action::Plan => &["root", "flake", "host", "state_dir", "intent"],
         Action::Show => &["root", "state_dir", "change_id"],
         Action::Discard => &["root", "state_dir", "change_id"],
@@ -285,6 +291,59 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
     }
     let diagnostic_unit = read_name("unit", 128)?;
     let query = read_name("query", 128)?;
+    let observe_program = read_name("program", 128)?;
+    if observe_program.as_deref().is_some_and(|program| {
+        !program
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._+-".contains(&byte))
+    }) {
+        return Err(RequestError::invalid(
+            Some(id.clone()),
+            "diagnostic program name is invalid",
+        ));
+    }
+    let observe_args = match params.get("args") {
+        None => Vec::new(),
+        Some(value) => {
+            let Some(values) = value.as_array() else {
+                return Err(RequestError::invalid(
+                    Some(id.clone()),
+                    "args must be an array of strings",
+                ));
+            };
+            if values.len() > crate::sandbox::MAX_ARGUMENTS {
+                return Err(RequestError::invalid(
+                    Some(id.clone()),
+                    "too many diagnostic arguments",
+                ));
+            }
+            let mut args = Vec::with_capacity(values.len());
+            let mut total = 0usize;
+            for value in values {
+                let Some(arg) = value.as_str() else {
+                    return Err(RequestError::invalid(
+                        Some(id.clone()),
+                        "diagnostic arguments must be strings",
+                    ));
+                };
+                if arg.len() > crate::sandbox::MAX_ARGUMENT_BYTES || arg.contains('\0') {
+                    return Err(RequestError::invalid(
+                        Some(id.clone()),
+                        "diagnostic argument is invalid or too large",
+                    ));
+                }
+                total = total.saturating_add(arg.len());
+                args.push(arg.to_owned());
+            }
+            if total > 16 * 1024 {
+                return Err(RequestError::invalid(
+                    Some(id.clone()),
+                    "diagnostic arguments exceed the total size limit",
+                ));
+            }
+            args
+        }
+    };
     if action == Action::Diagnose {
         if diagnostic_topic.as_deref() == Some("package")
             && (unit_filter.is_empty() || unit_filter.starts_with('.'))
@@ -460,6 +519,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         Action::SearchOption | Action::SearchPackage => {
             flake.is_some() && host.is_some() && query.is_some()
         }
+        Action::Observe => observe_program.is_some(),
     };
     if !required {
         return Err(RequestError::invalid(
@@ -487,6 +547,8 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         diagnostic_topic,
         diagnostic_unit,
         query,
+        observe_program,
+        observe_args,
     })
 }
 
@@ -540,6 +602,21 @@ mod tests {
             r#"{"schema_version":1,"id":"x","action":"search_option","params":{"host":"nixos","query":"bluetooth"}}"#,
             r#"{"schema_version":1,"id":"x","action":"search_package","params":{"flake":"/etc/nixos","host":"nixos","query":""}}"#,
             r#"{"schema_version":1,"id":"x","action":"search_package","params":{"flake":"/etc/nixos","host":"nixos","query":"vlc","limit":101}}"#,
+        ] {
+            assert_eq!(parse_request(input).unwrap_err().code, "invalid_request");
+        }
+    }
+
+    #[test]
+    fn observe_accepts_only_a_bounded_program_and_argument_array() {
+        let request = parse_request(r#"{"schema_version":1,"id":"o","action":"observe","params":{"program":"journalctl","args":["--boot","-n","20"]}}"#).unwrap();
+        assert_eq!(request.action, Action::Observe);
+        assert_eq!(request.observe_program.as_deref(), Some("journalctl"));
+        assert_eq!(request.observe_args, ["--boot", "-n", "20"]);
+        for input in [
+            r#"{"schema_version":1,"id":"o","action":"observe","params":{"program":"bash -c id"}}"#,
+            r#"{"schema_version":1,"id":"o","action":"observe","params":{"program":"journalctl","args":"--boot"}}"#,
+            r#"{"schema_version":1,"id":"o","action":"observe","params":{"program":"journalctl","env":{"PATH":"/tmp"}}}"#,
         ] {
             assert_eq!(parse_request(input).unwrap_err().code, "invalid_request");
         }

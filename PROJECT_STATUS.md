@@ -14,10 +14,12 @@ Rust Core remains independently usable and owns all system mutations. A live pro
 usability pilot and real-system deployment remain open. See [the runtime architecture](docs/architecture/08_AGENT_TASK_RUNTIME.md)
 and [the audit](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
-The expanded target also includes an initial SystemContext and a conservative metadata-only
-Ownership Resolver; automatic source-of-truth mapping, OBSERVE Execution Gateway, file transactions,
-full Desired State, versioned Knowledge, MCP/Web and a Privilege
-Broker remain open. No generic host-mutating Bash, MCP, Web fetch or User Config write is enabled.
+The expanded target also includes an initial SystemContext, a conservative metadata-only Ownership
+Resolver and the first OBSERVE Execution Gateway: structured diagnostic commands run through
+Bubblewrap with restricted Nix closures and resource limits. Full operation evidence, adversarial
+escape coverage, automatic source-of-truth mapping, file transactions, full Desired State, versioned
+Knowledge, MCP/Web and a Privilege Broker remain open. No host-mutating Bash, MCP, Web fetch or User
+Config write is enabled.
 See the staged gates in [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 
 Relay observes the system, plans a typed change in an isolated candidate, evaluates and builds it,
@@ -52,9 +54,10 @@ not switched the system generation. Real Relay activation was only ever exercise
 ## Test status
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
-and `cargo build --release` pass (169 library and 11 CLI tests; see `docs/DEVELOPMENT.md` for what the tests cover and the
-mapping to the mandatory safety categories in `tests/README.md`). `nix build .#default` builds and
-runs the tests in the sandbox. The VM check passed on 2026-10-03 on the development machine (KVM, about five minutes).
+and `nix build .#default` pass (178 library and 13 CLI tests; Agent typecheck and 35 tests pass with
+one existing opt-in test skipped). The explicit host OBSERVE smoke test also passes against real
+Bubblewrap/user-systemd. See `docs/DEVELOPMENT.md` for the safety-test mapping. The VM check passed on
+2026-10-03 on the development machine (KVM, about five minutes).
 
 ## Known limits and open decisions
 

@@ -38,7 +38,8 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ cargo rustc clippy rustfmt nodejs_22 ];
+          packages = with pkgs; [ cargo rustc clippy rustfmt nodejs_22 bubblewrap ];
+          RELAY_BWRAP_PATH = "${pkgs.bubblewrap}/bin/bwrap";
         };
       });
 

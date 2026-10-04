@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
-export type CoreAction = "status" | "health" | "units" | "generations" | "diagnose" | "search_option" | "search_package" | "plan" | "show" | "discard" | "apply" | "undo_preview" | "undo" | "recover_preview" | "recover";
+export type CoreAction = "status" | "health" | "units" | "generations" | "diagnose" | "search_option" | "search_package" | "observe" | "plan" | "show" | "discard" | "apply" | "undo_preview" | "undo" | "recover_preview" | "recover";
 type CoreDefaults = { root?: string; flake?: string; host?: string; state_dir?: string };
 
 interface CoreEnvelope {
@@ -33,6 +33,8 @@ export class RelayBridge {
             ? { root: this.defaults.root }
           : action === "diagnose"
             ? { root: this.defaults.root }
+          : action === "observe"
+            ? {}
           : action === "search_option" || action === "search_package"
             ? { flake: this.defaults.flake, host: this.defaults.host }
         : action === "show"
@@ -63,7 +65,7 @@ export class RelayBridge {
         child.kill("SIGTERM");
         finish(new Error("Relay Core request cancelled"));
       };
-      const timeoutApplies = action === "status" || action === "health" || action === "units" || action === "show" || action === "undo_preview" || action === "recover_preview";
+      const timeoutApplies = action === "status" || action === "health" || action === "units" || action === "show" || action === "undo_preview" || action === "recover_preview" || action === "observe";
       const timer = timeoutApplies ? setTimeout(() => {
         child.kill("SIGTERM");
         finish(new Error("Relay Core request timed out"));

@@ -18,6 +18,7 @@ mod journal;
 mod json;
 mod nix;
 pub mod protocol;
+pub mod sandbox;
 mod sha256;
 mod source;
 mod state;

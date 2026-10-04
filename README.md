@@ -46,12 +46,13 @@ Relay V1 kann zuverlässig:
     bestätigungsgebundenen Core-Änderungen und strukturierter Nachprüfung (`relay` oder
     `nix run .#agent`).
 
-Die breitere Zielarchitektur ergänzt danach SystemContext, Ownership Map, Execution Gateway,
-transaktionale User-Dateiänderungen sowie Relay-eigenes MCP/Web-Wissen. Diese Fähigkeiten sind noch
-nicht freigeschaltet. Pi RPC ist bereits der normale Task-Agent und erhält Relay-eigene Tools über
-eine isolierte Extension und einen privaten Socket. Ein erster verifizierter SystemContext wird bei
-Taskstart injiziert und journalisiert. Die vollständige Ownership-Erkennung und ein allgemeines
-Execution Gateway stehen noch aus. Der Ist-/Soll-Audit und die Migrationsphasen stehen in
+Die breitere Zielarchitektur ergänzt danach vollständige Ownership-Auflösung, transaktionale
+User-Dateiänderungen sowie Relay-eigenes MCP/Web-Wissen. Pi RPC ist bereits der normale Task-Agent
+und erhält Relay-eigene Tools über eine isolierte Extension und einen privaten Socket. Ein erster
+verifizierter SystemContext wird bei Taskstart injiziert und journalisiert. Das Execution Gateway
+hat nun einen ersten OBSERVE-Pfad: ausgewählte Diagnoseprogramme laufen in Bubblewrap mit begrenztem
+Nix-Closure, getrennten Namespaces, ohne Host-Netzwerk und ohne Zugriff auf `/home`, `/etc`, `/run`,
+EFI-Variablen oder Cgroup-Sysfs. User-Datei- und Root-Mutationen bleiben gesperrt. Ist-/Soll-Audit und Migrationsphasen stehen in
 [`docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md`](docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md)
 und [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 
@@ -129,7 +130,10 @@ nix run .#agent
 ```
 
 Für natürliche Sprache braucht der Agent einen konfigurierten Modellprovider. Er lädt kein
-persönliches Pi-Profil und bietet dem Modell weder MCP noch allgemeine Datei- oder Shell-Werkzeuge.
+persönliches Pi-Profil und bietet dem Modell weder MCP noch allgemeine Datei-Schreibwerkzeuge.
+Für unerwartete Diagnosefälle gibt es `relay_observe_command`: strukturierte Programme und Argumente
+laufen in einer read-only Bubblewrap-Sandbox. Dafür müssen Bubblewrap aus dem Relay-Paket und ein
+laufender User-systemd-Manager verfügbar sein; andernfalls wird der Aufruf verweigert.
 `--pi-rpc-check` prüft den isolierten Pi-RPC-Prozess mit Relay-eigenem HOME, XDG-, Konfigurations-
 und Sessionpfad; es sendet keinen Modellprompt. Die normale interaktive Runtime startet pro Task
 eine eigene Pi-RPC-Session und lädt ausschließlich Relay-Tools aus einer privaten Task-Erweiterung.
@@ -137,8 +141,8 @@ Alle Pi-Pakete sind
 im Repository fixiert; Provider-Einstellungen stehen in Relays eigener Konfiguration. Diagnose,
 Änderungsvorschlag und Nachprüfung laufen als
 Task. Apply, Undo und Recovery erfordern direkte, an die konkrete Core-Vorschau gebundene
-Bestätigung. Allgemeine Bash-/Dateimutationen, MCP und Webzugriff sind noch nicht aktiviert; sie
-werden erst nach Execution-Gateway-, Sandbox- und Transaction-Tests ergänzt. Toolumfang und bekannte Grenzen stehen in
+Bestätigung. Bash-/Dateimutationen auf dem Host, User-Dateitransaktionen, MCP und Webzugriff sind
+noch nicht aktiviert. Toolumfang und bekannte Grenzen stehen in
 [`agent/README.md`](agent/README.md) und [`docs/audits/SYSTEM_AGENT_V1_RESULT.md`](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
 ## Projektführung

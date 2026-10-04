@@ -55,8 +55,9 @@ Policy- und Evidence-Schicht zu. Der [Baseline-Audit](../audits/RELAY_PI_CONTROL
 und ADR 0011–0022 sind Soll-Architektur; einzelne Fähigkeiten gelten erst nach ihrer Phase und ihren
 Security Tests als verfügbar.
 
-- Pi RPC ist eine Prozess-/API-Grenze, keine OS-Sandbox. Eingebaute Hosttools und MCP-Server werden
-  vor echter Sandbox-/Gateway-Prüfung nicht für allgemeine Host-Mutationen aktiviert.
+- Pi RPC ist eine Prozess-/API-Grenze, keine OS-Sandbox. Diagnoseprozesse werden ausschließlich
+  durch Relays Rust-Gateway in einer read-only Bubblewrap-Sandbox gestartet. Eingebaute Hosttools
+  und MCP-Server erhalten keinen direkten Hostzugriff; allgemeine Host-Mutationen bleiben gesperrt.
 - Shells/Interpreter werden nicht anhand einer simplen Executable-Whitelist autorisiert. Policy
   bewertet argv, cwd, env, redirections, file descriptors, resolved targets, ownership, privilege,
   scope, erwartete Wirkung und Rücknehmbarkeit; Enforcement erfolgt zusätzlich per Linux OS-Grenze.

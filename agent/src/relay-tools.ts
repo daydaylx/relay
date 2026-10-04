@@ -6,6 +6,7 @@ import { RelayBridge } from "./bridge.js";
 import type { TaskService } from "./task-service.js";
 import { readSafeConfigFile } from "./safe-read.js";
 import { resolveOwnership } from "./ownership.js";
+import { containsLikelySecret } from "./security.js";
 
 export interface RelayToolContext {
   task: TaskService;
@@ -277,6 +278,28 @@ export function createRelayTools(bridge: RelayBridge, context?: RelayToolContext
     },
   };
 
+  const observeParameters = Type.Object({
+    program: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9._+-]+$" }),
+    args: Type.Optional(Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 64 })),
+  });
+  const observeTool: AgentTool<typeof observeParameters> = {
+    name: "relay_observe_command",
+    label: "Run Sandboxed Diagnostic",
+    description: "Run one diagnostic command without a shell on the host. Relay resolves its Nix store closure and runs it in a networkless Bubblewrap sandbox with read-only /sys, private /proc and /dev, disposable /tmp, no /home, /etc, /run, D-Bus, Wayland or Nix daemon sockets, and strict time/output/resource limits. It cannot mutate host files or services. Use this for diagnosis only; managed changes use Relay plans.",
+    parameters: observeParameters,
+    async execute(_id, params, signal) {
+      if (signal?.aborted) throw new Error("diagnostic command was cancelled");
+      if (containsLikelySecret(JSON.stringify(params))) throw new Error("diagnostic arguments look like they contain a secret");
+      const data = object(await bridge.request("observe", { program: params.program, args: params.args ?? [] }, signal));
+      const stdout = typeof data.stdout === "string" ? data.stdout : "";
+      const stderr = typeof data.stderr === "string" ? data.stderr : "";
+      if (containsLikelySecret(stdout) || containsLikelySecret(stderr)) {
+        return result({ exit_code: data.exit_code ?? null, output_suppressed: true, reason: "possible_secret_detected" });
+      }
+      return result({ exit_code: Number.isSafeInteger(data.exit_code) ? data.exit_code : null, stdout, stderr });
+    },
+  };
+
   const workflowTools: AgentTool[] = [];
   if (context) {
     const applyParameters = Type.Object({ change_id: Type.String({ minLength: 1, maxLength: 128 }) });
@@ -431,7 +454,7 @@ export function createRelayTools(bridge: RelayBridge, context?: RelayToolContext
     };
     workflowTools.push(verifyTool);
   }
-  return [contextTool, ownershipTool, statusTool, healthTool, unitsTool, diagnoseTool, searchOptionTool, searchPackageTool, ...(context ? [safeReadTool] : []), planTool, showTool, ...workflowTools];
+  return [contextTool, ownershipTool, statusTool, healthTool, unitsTool, diagnoseTool, searchOptionTool, searchPackageTool, observeTool, ...(context ? [safeReadTool] : []), planTool, showTool, ...workflowTools];
 }
 
 function safeSearchResults(value: Record<string, unknown>): Record<string, unknown> {

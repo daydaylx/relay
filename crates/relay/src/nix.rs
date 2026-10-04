@@ -138,6 +138,41 @@ impl NixAdapter {
         Arc::clone(&self.runner)
     }
 
+    /// Return the recursive closure for an already resolved store executable. Callers use this
+    /// to expose only that executable's immutable runtime to an isolated observer process.
+    pub fn store_closure(&self, store_path: &str) -> Result<Vec<String>, NixError> {
+        validate_store_path(store_path).map_err(NixError::new)?;
+        let output = self.run(
+            Invocation::new(&self.nix)
+                .args(["path-info", "--recursive", "--json", store_path])
+                .timeout(std::time::Duration::from_secs(20))
+                .output_limit(1024 * 1024),
+            "Nix store closure query",
+        )?;
+        let value = crate::json::Json::parse(&output.stdout_text()?)
+            .map_err(|_| NixError::new("Nix returned invalid store closure data"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| NixError::new("Nix returned invalid store closure data"))?;
+        if object.is_empty() || object.len() > 4096 {
+            return Err(NixError::new("Nix store closure is empty or too large"));
+        }
+        let mut paths = Vec::with_capacity(object.len());
+        for path in object.keys() {
+            validate_store_path(path).map_err(NixError::new)?;
+            if path.bytes().any(|byte| byte.is_ascii_whitespace()) {
+                return Err(NixError::new("Nix returned an invalid store closure path"));
+            }
+            paths.push(path.clone());
+        }
+        if !paths.iter().any(|path| path == store_path) {
+            return Err(NixError::new(
+                "Nix closure omitted its requested executable",
+            ));
+        }
+        Ok(paths)
+    }
+
     pub fn version(&self) -> Result<String, NixError> {
         let output = self.run(Invocation::new(&self.nix).arg("--version"), "nix --version")?;
         let version = output.stdout_text()?;
@@ -655,6 +690,26 @@ mod tests {
                 .any(|a| a == "--no-write-lock-file")
         );
         assert!(!calls[0].is_privileged());
+    }
+
+    #[test]
+    fn store_closure_is_structured_bounded_and_confined_to_store_paths() {
+        let runner = Arc::new(Recording(
+            Mutex::new(Vec::new()),
+            Outcome {
+                code: Some(0),
+                stdout: br#"{"/nix/store/aaa-tool":{},"/nix/store/bbb-lib":{}}"#.to_vec(),
+                stderr: Vec::new(),
+            },
+        ));
+        let nix = NixAdapter::with_runner("nix", runner.clone());
+        let closure = nix.store_closure("/nix/store/aaa-tool").unwrap();
+        assert_eq!(closure, ["/nix/store/aaa-tool", "/nix/store/bbb-lib"]);
+        let invocation = runner.0.lock().unwrap();
+        assert_eq!(
+            invocation[0].arguments()[0..3],
+            ["path-info", "--recursive", "--json"]
+        );
     }
 
     #[test]

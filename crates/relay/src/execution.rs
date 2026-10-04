@@ -34,6 +34,7 @@ pub fn classify(request: &Request) -> Operation {
         | Action::Diagnose
         | Action::SearchOption
         | Action::SearchPackage
+        | Action::Observe
         | Action::Show
         | Action::UndoPreview
         | Action::RecoverPreview => (OperationClass::ReadOnly, false),
@@ -84,6 +85,8 @@ mod tests {
             diagnostic_topic: None,
             diagnostic_unit: None,
             query: None,
+            observe_program: None,
+            observe_args: Vec::new(),
         }
     }
 

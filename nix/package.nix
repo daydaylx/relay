@@ -1,4 +1,4 @@
-{ lib, rustPlatform }:
+{ lib, rustPlatform, bubblewrap, makeWrapper }:
 
 let
   manifest = lib.importTOML ../crates/relay/Cargo.toml;
@@ -17,6 +17,11 @@ rustPlatform.buildRustPackage {
     ];
   };
   cargoLock.lockFile = ../Cargo.lock;
+  nativeBuildInputs = [ makeWrapper ];
+  postInstall = ''
+    wrapProgram $out/bin/relay --set RELAY_BWRAP_PATH ${bubblewrap}/bin/bwrap
+  '';
+  passthru.runtimeDependencies = [ bubblewrap ];
 
   meta = {
     description = "NixOS-first system control tool: intent to safe, recoverable NixOS changes";

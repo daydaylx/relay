@@ -51,14 +51,20 @@ claims cannot authorize a mutation.
 
 - Observe and diagnose: system status/health, bounded service lists, targeted service/system/network/
   Bluetooth/hardware/process/journal/desktop/generation/package information.
+- Sandboxed diagnostics: `relay_observe_command` can run a structured program/argument vector from
+  the active NixOS system profile. Relay mounts only that program's recursive Nix closure, selected
+  read-only hardware trees under `/sys` (excluding firmware and cgroups), private `/proc` and `/dev`,
+  and a disposable `/tmp`; it does not mount `/home`, `/etc`, `/run`, network, or user/system session sockets. Bubblewrap, unprivileged user namespaces, and the
+  user systemd manager's resource controls are required; otherwise the command fails closed.
 - Search: NixOS options and packages without returning option values or defaults.
 - Safe configuration reads: small regular `.nix`, `.md`, `.toml` or `flake.lock` files under the
   configured flake only; hidden paths, symlinks, likely secrets and personal Pi data are rejected.
 - Change workflow: typed plan, review, discard, locally confirmed apply, locally confirmed undo or
   recovery, and structured goal verification.
 
-There is no general shell, `sudo`, arbitrary process execution, arbitrary file write, or generic
-filesystem-read tool. Relay Core still blocks protected resources and refuses source drift,
+There is no host shell, `sudo`, host filesystem access, arbitrary file write, or generic
+filesystem-read tool. Sandboxed processes may use shell/interpreters only against their own Nix
+closure and the limited synthetic mounts described above. Relay Core still blocks protected resources and refuses source drift,
 inhibitors and unsupported changes in code. The Agent is never the security boundary.
 
 Goal verification currently supports Bluetooth readiness, an explicitly named active service,

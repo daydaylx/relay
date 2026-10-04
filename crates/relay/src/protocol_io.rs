@@ -89,6 +89,29 @@ fn dispatch(request: &relay::protocol::Request) -> String {
     if matches!(request.action, Action::SearchOption | Action::SearchPackage) {
         return search_nix(request);
     }
+    if request.action == Action::Observe {
+        let Some(program) = request.observe_program.as_deref() else {
+            return error_response(
+                Some(&request.id),
+                "invalid_request",
+                "diagnostic program is required",
+            );
+        };
+        return match relay::sandbox::SandboxRunner::default().run(program, &request.observe_args) {
+            Ok(result) => {
+                let code = result
+                    .code
+                    .map_or("null".to_owned(), |code| code.to_string());
+                let data = format!(
+                    "{{\"exit_code\":{code},\"stdout\":{},\"stderr\":{}}}",
+                    relay::json_string(&result.stdout),
+                    relay::json_string(&result.stderr),
+                );
+                success_response(&request.id, &data)
+            }
+            Err(error) => error_response(Some(&request.id), "observe_failed", &error.to_string()),
+        };
+    }
     match run_core(request) {
         Ok(output)
             if request.action == Action::Show
@@ -242,7 +265,7 @@ fn run_core(request: &relay::protocol::Request) -> Result<std::process::Output, 
             push_option(&mut command, "--unit", request.diagnostic_unit.as_deref());
             command.args(["--limit", &request.unit_limit.to_string()]);
         }
-        Action::SearchOption | Action::SearchPackage => return Err(()),
+        Action::SearchOption | Action::SearchPackage | Action::Observe => return Err(()),
         Action::Plan => {
             command.arg("plan");
             push_option(&mut command, "--root", request.root.as_deref());
@@ -374,6 +397,8 @@ mod tests {
             diagnostic_topic: None,
             diagnostic_unit: None,
             query: None,
+            observe_program: None,
+            observe_args: Vec::new(),
         }
     }
 

@@ -23,7 +23,9 @@ Only the selected provider's API-key environment variable is forwarded.
 Every task receives a locally assembled verified SystemContext in Pi's system prompt. A redacted
 copy is stored in the task journal and re-injected on resume. Context includes NixOS identity,
 configuration revisions, generations, hardware and desktop summaries, capabilities, and the
-currently known ownership boundary. Unknown Home Manager/user configuration remains read-only.
+currently known ownership boundary. `relay_resolve_ownership` classifies requested paths from
+filesystem metadata only; it does not inspect file contents. Unknown Home Manager/user configuration
+remains read-only, and the resolver does not yet prove source ownership through flake evaluation.
 
 ## Runtime and task flow
 

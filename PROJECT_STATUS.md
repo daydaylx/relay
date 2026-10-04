@@ -14,8 +14,9 @@ Rust Core remains independently usable and owns all system mutations. A live pro
 usability pilot and real-system deployment remain open. See [the runtime architecture](docs/architecture/08_AGENT_TASK_RUNTIME.md)
 and [the audit](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
-The expanded target also includes an initial SystemContext; automatic Ownership Map, OBSERVE
-Execution Gateway, file transactions, full Desired State, versioned Knowledge, MCP/Web and a Privilege
+The expanded target also includes an initial SystemContext and a conservative metadata-only
+Ownership Resolver; automatic source-of-truth mapping, OBSERVE Execution Gateway, file transactions,
+full Desired State, versioned Knowledge, MCP/Web and a Privilege
 Broker remain open. No generic host-mutating Bash, MCP, Web fetch or User Config write is enabled.
 See the staged gates in [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 

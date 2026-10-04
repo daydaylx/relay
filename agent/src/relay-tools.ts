@@ -1,9 +1,11 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { Type } from "typebox";
 import { RelayBridge } from "./bridge.js";
 import type { TaskService } from "./task-service.js";
 import { readSafeConfigFile } from "./safe-read.js";
+import { resolveOwnership } from "./ownership.js";
 
 export interface RelayToolContext {
   task: TaskService;
@@ -114,6 +116,8 @@ export function createRelayTools(bridge: RelayBridge, context?: RelayToolContext
         .map((item) => ({ number: item.number, active: item.active === true, booted: item.booted === true })) : [];
       const hardware = diagnosticSummary("hardware", hardwareValue);
       const desktop = diagnosticSummary("desktop", desktopValue);
+      const sourceRoot = context?.configRoot ?? process.cwd();
+      const home = process.env.HOME || homedir();
       return result({
         schema_version: 1,
         observed_at: new Date().toISOString(),
@@ -121,12 +125,23 @@ export function createRelayTools(bridge: RelayBridge, context?: RelayToolContext
         configuration_identity: { config_identity: status.config_identity ?? null, configuration_revision: status.configuration_revision ?? null, nixpkgs_revision: status.nixpkgs_revision ?? null, managed_module: status.managed_module ?? null },
         live_snapshot: { active_generation: status.active_generation ?? null, booted_generation: status.booted_generation ?? null, generations, failed_units: status.failed_units ?? [], desktop_session: status.desktop_session ?? null, desktop, hardware },
         ownership: [
-          { scope: "NixOS managed module", owner: "Relay Safety Core", authority: "relay/managed.nix", writable: true, condition: "Only typed Relay plans; candidate, evaluation, build, review, confirmation and verification required." },
-          { scope: "Other NixOS, Home Manager, Hyprland and user configuration", owner: "unresolved", authority: "read-only in this runtime", writable: false },
+          resolveOwnership(sourceRoot, "relay/managed.nix"),
+          resolveOwnership(sourceRoot, `${home}/.config/hypr`),
         ],
         capabilities: { observe: ["system status", "generations", "health", "services", "hardware", "network", "Bluetooth", "desktop", "safe config reads", "NixOS option search", "package search"], mutate: ["typed Relay-managed NixOS plans; apply only after direct local confirmation"] },
         knowledge_provenance: "All returned facts originate from local Relay/NixOS adapters; external documentation or web research is not yet configured.",
       });
+    },
+  };
+  const ownershipParameters = Type.Object({ path: Type.String({ minLength: 1, maxLength: 512 }) });
+  const ownershipTool: AgentTool<typeof ownershipParameters> = {
+    name: "relay_resolve_ownership",
+    label: "Resolve Configuration Ownership",
+    description: "Classify a NixOS source or user configuration path using filesystem metadata and symlink targets only. Never reads file contents and never changes anything. Unknown, generated, Home Manager and direct user configuration remain read-only.",
+    parameters: ownershipParameters,
+    async execute(_id, params, signal) {
+      if (signal?.aborted) throw new Error("ownership inspection was cancelled");
+      return result(resolveOwnership(context?.configRoot ?? process.cwd(), params.path));
     },
   };
   const statusTool: AgentTool = {
@@ -416,7 +431,7 @@ export function createRelayTools(bridge: RelayBridge, context?: RelayToolContext
     };
     workflowTools.push(verifyTool);
   }
-  return [contextTool, statusTool, healthTool, unitsTool, diagnoseTool, searchOptionTool, searchPackageTool, ...(context ? [safeReadTool] : []), planTool, showTool, ...workflowTools];
+  return [contextTool, ownershipTool, statusTool, healthTool, unitsTool, diagnoseTool, searchOptionTool, searchPackageTool, ...(context ? [safeReadTool] : []), planTool, showTool, ...workflowTools];
 }
 
 function safeSearchResults(value: Record<string, unknown>): Record<string, unknown> {

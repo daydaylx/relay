@@ -32,6 +32,7 @@ test("model tools exclude mutation and keep paths and exact diff values out of m
   const tools = createRelayTools(fake);
   assert.deepEqual(tools.map((tool) => tool.name), [
     "relay_system_context",
+    "relay_resolve_ownership",
     "relay_system_status",
     "relay_system_health",
     "relay_list_units",
@@ -41,16 +42,16 @@ test("model tools exclude mutation and keep paths and exact diff values out of m
     "relay_plan_change",
     "relay_show_plan",
   ]);
-  const status = await tools[1].execute("s", {}, undefined, undefined);
+  const status = await tools[2].execute("s", {}, undefined, undefined);
   const statusText = status.content.map((part) => part.type === "text" ? part.text : "").join("");
   assert.equal(statusText.includes("private-system-path"), false);
   assert.equal(statusText.includes("private-revision"), false);
   assert.equal(statusText.includes("private-app"), false);
 
-  const diagnosis = await tools[4].execute("d", { topic: "journal", unit: "nginx.service" }, undefined, undefined);
+  const diagnosis = await tools[5].execute("d", { topic: "journal", unit: "nginx.service" }, undefined, undefined);
   assert.equal(JSON.stringify(diagnosis.content).includes("private-token"), false);
   assert.equal(JSON.stringify(diagnosis.content).includes("MESSAGE"), false);
-  const generations = await tools[4].execute("d", { topic: "generations" }, undefined, undefined);
+  const generations = await tools[5].execute("d", { topic: "generations" }, undefined, undefined);
   assert.equal(JSON.stringify(generations.content).includes("/nix/store/private-system"), false);
 
   const plan = await tools.find((tool) => tool.name === "relay_plan_change")!.execute("p", { intent: { schema: 1, changes: [] } }, undefined, undefined);

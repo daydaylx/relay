@@ -2,7 +2,10 @@
 
 Relay ist ein eigenständiges lokales Systemwerkzeug für NixOS.
 
-Es ist **kein Coding-Agent**, kein Pi-Fork und keine allgemeine Root-Shell mit KI.
+Relay ist ein intelligentes, AI-unterstütztes NixOS-Systemkontrollzentrum. Es verwendet Pi als
+Reasoning- und Orchestrierungsschicht; Relay stellt Systemkontext, Ownership, Policies, Ausführung,
+Recovery und Verifikation bereit. Relay ist **kein Pi-Fork**, Coding-Agent oder allgemeine Root-Shell
+mit KI.
 
 Ziel:
 
@@ -18,7 +21,10 @@ Ziel:
 - `test` ist temporäre Aktivierung, kein automatischer Rollback.
 - Source-State und Runtime-State werden gemeinsam versioniert.
 - Stateful Daten werden separat betrachtet.
-- AI ist optional.
+- AI und Agent-Runtime sind optional; der Rust-Core bleibt unabhängig davon verwendbar.
+- Pi orchestriert Relay-Tools. Nur Relay Core darf Änderungen validieren und ausführen.
+- Relay lädt oder untersucht kein persönliches Pi-Setup (`~/.pi`, Profile, Prompts, Extensions,
+  Sessions oder Einstellungen). Agent-Konfiguration liegt separat unter `~/.config/relay/`.
 - Relay selbst läuft nicht dauerhaft als root.
 
 ## MVP
@@ -36,8 +42,18 @@ Relay V1 kann zuverlässig:
 9. unterbrochene Änderungen nach einem Absturz erkennen und zurückrollen (`recover`).
 10. optional: Wünsche in natürlicher Sprache in geprüfte, typisierte Vorschläge übersetzen (`ask`).
 11. unter Hyprland Monitore, Workspaces und Kompositor-Gesundheit lesen und in die Sicherheitsprüfung einbeziehen (`desktop`).
-12. optional mit dem separaten Original-Pi-Agenten natürlichsprachlich inspizieren, planen und
-    bestätigte Relay-Änderungen ausführen (`nix run .#agent`).
+12. optionale Pi-Agent-Runtime für mehrstufige Ziele mit Relay-Task-Journal, Diagnose-Tools,
+    bestätigungsgebundenen Core-Änderungen und strukturierter Nachprüfung (`relay` oder
+    `nix run .#agent`).
+
+Die breitere Zielarchitektur ergänzt danach SystemContext, Ownership Map, Execution Gateway,
+transaktionale User-Dateiänderungen sowie Relay-eigenes MCP/Web-Wissen. Diese Fähigkeiten sind noch
+nicht freigeschaltet. Pi RPC ist bereits der normale Task-Agent und erhält Relay-eigene Tools über
+eine isolierte Extension und einen privaten Socket. Ein erster verifizierter SystemContext wird bei
+Taskstart injiziert und journalisiert. Die vollständige Ownership-Erkennung und ein allgemeines
+Execution Gateway stehen noch aus. Der Ist-/Soll-Audit und die Migrationsphasen stehen in
+[`docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md`](docs/audits/RELAY_PI_CONTROL_CENTER_BASELINE.md)
+und [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 
 Relay schreibt automatisch nur in einen eigenen kontrollierten Bereich: `relay/managed.nix`.
 Geschützte Ressourcen (`system.stateVersion`, Bootloader, Dateisysteme, LUKS, Nix-Trust, Auth/SSH,
@@ -81,11 +97,13 @@ Teststrategie: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Aktueller Stand
 
-Die Zielzustände T1 (Observer), T2 (Candidate Builder), T3 (Activator), T4 (Recovery), T5
-(optionale KI-Schicht) und T6 (Hyprland, read-only) sind implementiert und durch Simulator-Tests,
-echte Nix-Läufe, eine laufende Hyprland-Sitzung und einen NixOS-VM-Test belegt. Der optionale
-Pi-Agent (T7) ist implementiert; interaktive Provider-Nutzung und Usability sind noch nicht live
-erprobt. Der aktuelle Hoststatus und alle offenen Punkte stehen in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+T1 bis T6 sind durch Core-, Simulator- und NixOS-VM-Tests belegt. T7 enthält nun die eingebettete
+Pi-Agent-Runtime, persistierte Tasks, mehrstufige Tool-Aufrufe, lokale Mutationsbestätigung und
+strukturierte Verifikation für unterstützte Ziele. Ein echter interaktiver Providerlauf und ein
+Usability-Pilot sind offen. Aktuell kann die Task-Verifikation Bluetooth-Bereitschaft, einen
+konkreten Dienst, Systemgesundheit und Paketverfügbarkeit prüfen; weitere Ziele wie MIME-Defaults,
+Monitorlayout oder Generationenbereinigung sind noch nicht Ende-zu-Ende unterstützt. Details stehen
+in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 ## Installation auf NixOS
 
@@ -95,21 +113,30 @@ Die Flake baut Relay als Paket:
 nix profile install /home/g/Projekte/Relay_NixOS_Project#default
 ```
 
-Die Installation ändert nur das Benutzerprofil, nicht die Systemkonfiguration.
+Das Standardpaket enthält den Core und den optionalen Agent-Einstieg `relay`. Die Installation
+ändert nur das Benutzerprofil, nicht die Systemkonfiguration. Für einen reinen Rust-Core ohne
+Agent-Runtime gibt es `.#core`.
 
 Der optionale Agent wird separat gebaut und gestartet. Das Nix-Paket bringt Node.js mit; für die
 Nutzung muss Node nicht separat installiert sein:
 
 ```sh
 nix run .#agent -- --init-config
+nix run .#agent -- --pi-rpc-check
 nix run .#agent
 ```
 
 Für natürliche Sprache braucht der Agent einen konfigurierten Modellprovider. Er lädt kein
 persönliches Pi-Profil und bietet dem Modell weder MCP noch allgemeine Datei- oder Shell-Werkzeuge.
-Seine feste Werkzeugliste umfasst Status, Health, begrenzte Dienst- und Themendiagnosen sowie
-Änderungsplanung und Planansicht. Apply, Undo und Recovery erfordern direkte, zielgebundene Bestätigung durch
-den Nutzer. Toolumfang, Bestätigung und offene Pilot-/Diagnosegrenzen stehen in
+`--pi-rpc-check` prüft den isolierten Pi-RPC-Prozess mit Relay-eigenem HOME, XDG-, Konfigurations-
+und Sessionpfad; es sendet keinen Modellprompt. Die normale interaktive Runtime startet pro Task
+eine eigene Pi-RPC-Session und lädt ausschließlich Relay-Tools aus einer privaten Task-Erweiterung.
+Alle Pi-Pakete sind
+im Repository fixiert; Provider-Einstellungen stehen in Relays eigener Konfiguration. Diagnose,
+Änderungsvorschlag und Nachprüfung laufen als
+Task. Apply, Undo und Recovery erfordern direkte, an die konkrete Core-Vorschau gebundene
+Bestätigung. Allgemeine Bash-/Dateimutationen, MCP und Webzugriff sind noch nicht aktiviert; sie
+werden erst nach Execution-Gateway-, Sandbox- und Transaction-Tests ergänzt. Toolumfang und bekannte Grenzen stehen in
 [`agent/README.md`](agent/README.md) und [`docs/audits/SYSTEM_AGENT_V1_RESULT.md`](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
 
 ## Projektführung

@@ -13,11 +13,11 @@ test("routes supported changes through typed Relay planning", () => {
   assert.equal(routeRequest("Enable Bluetooth").route, "RELAY_CHANGE");
 });
 
-test("blocks protected mutations and unsupported write backends locally", () => {
-  assert.equal(routeRequest("Change system.stateVersion").route, "BLOCKED");
-  assert.equal(routeRequest("Change my Hyprland config").route, "DEVELOPMENT_REQUIRED");
+test("keeps routing heuristic while Relay Core owns protected mutation decisions", () => {
+  assert.equal(routeRequest("Change system.stateVersion").route, "INSPECT");
+  assert.equal(routeRequest("Change my Hyprland config").route, "INSPECT");
   assert.equal(routeRequest("Why is Bluetooth not working?").route, "DIAGNOSE");
-  assert.equal(routeRequest("Change SecureBoot").route, "BLOCKED");
+  assert.equal(routeRequest("Change SecureBoot").route, "INSPECT");
 });
 
 test("the 20-question diagnosis corpus resolves to the expected read-only topic", () => {

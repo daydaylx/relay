@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { hostname, homedir } from "node:os";
 
 export interface AgentConfig {
@@ -21,6 +21,15 @@ function defaultConfig(): AgentConfig {
 export function configPath(): string {
   const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return process.env.RELAY_AGENT_CONFIG || join(configHome, "relay", "agent.json");
+}
+
+export function relayRuntimeConfigDirectory(requestedConfigHome = process.env.XDG_CONFIG_HOME, userHome = homedir()): string {
+  const defaultConfigHome = join(userHome, ".config");
+  const configHome = requestedConfigHome && isAbsolute(requestedConfigHome) ? resolve(requestedConfigHome) : defaultConfigHome;
+  const personalPiDirectory = resolve(userHome, ".pi");
+  const relativeToPi = relative(personalPiDirectory, configHome);
+  const isInsidePersonalPi = relativeToPi === "" || (!relativeToPi.startsWith("..") && !isAbsolute(relativeToPi));
+  return join(isInsidePersonalPi ? defaultConfigHome : configHome, "relay");
 }
 
 export function loadConfig(): AgentConfig {

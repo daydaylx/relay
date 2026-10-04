@@ -79,6 +79,9 @@ fn read_line_limited<R: BufRead>(
 }
 
 fn dispatch(request: &relay::protocol::Request) -> String {
+    if matches!(request.action, Action::SearchOption | Action::SearchPackage) {
+        return search_nix(request);
+    }
     match run_core(request) {
         Ok(output)
             if request.action == Action::Show
@@ -122,6 +125,80 @@ fn dispatch(request: &relay::protocol::Request) -> String {
     }
 }
 
+fn search_nix(request: &relay::protocol::Request) -> String {
+    let Some(flake) = request.flake.as_deref() else {
+        return error_response(
+            Some(&request.id),
+            "invalid_request",
+            "search flake is required",
+        );
+    };
+    let Some(host) = request.host.as_deref() else {
+        return error_response(
+            Some(&request.id),
+            "invalid_request",
+            "search host is required",
+        );
+    };
+    let Some(query) = request.query.as_deref() else {
+        return error_response(
+            Some(&request.id),
+            "invalid_request",
+            "search query is required",
+        );
+    };
+    let kind = if request.action == Action::SearchOption {
+        relay::IndexKind::Options
+    } else {
+        relay::IndexKind::Packages
+    };
+    let result = relay::NixAdapter::default()
+        .generate_index_json(std::path::Path::new(flake), host, kind)
+        .map_err(|_| ())
+        .and_then(|json| relay::SearchIndex::from_json(&json, kind.as_str()).map_err(|_| ()))
+        .map(|index| {
+            let entries = index
+                .find(query)
+                .into_iter()
+                .take(request.unit_limit.min(20))
+                .map(|entry| {
+                    format!(
+                        "{{\"name\":{},\"type\":{},\"description\":{},\"read_only\":{}}}",
+                        relay::json_string(&entry.name),
+                        entry
+                            .type_name
+                            .as_deref()
+                            .map(relay::json_string)
+                            .unwrap_or_else(|| "null".to_owned()),
+                        relay::json_string(
+                            &entry.description.chars().take(1200).collect::<String>()
+                        ),
+                        entry.read_only,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{{\"kind\":{},\"results\":[{}]}}",
+                relay::json_string(kind.as_str()),
+                entries
+            )
+        });
+    match result {
+        Ok(data) if data.len() <= MAX_RESPONSE_BYTES => success_response(&request.id, &data),
+        Ok(_) => error_response(
+            Some(&request.id),
+            "output_limit",
+            "Nix search result exceeds the size limit",
+        ),
+        Err(()) => error_response(
+            Some(&request.id),
+            "search_failed",
+            "Nix option/package search failed or returned an invalid index",
+        ),
+    }
+}
+
 fn run_core(request: &relay::protocol::Request) -> Result<std::process::Output, ()> {
     let executable = std::env::current_exe().map_err(|_| ())?;
     let mut command = Command::new(executable);
@@ -158,6 +235,7 @@ fn run_core(request: &relay::protocol::Request) -> Result<std::process::Output, 
             push_option(&mut command, "--unit", request.diagnostic_unit.as_deref());
             command.args(["--limit", &request.unit_limit.to_string()]);
         }
+        Action::SearchOption | Action::SearchPackage => return Err(()),
         Action::Plan => {
             command.arg("plan");
             push_option(&mut command, "--root", request.root.as_deref());
@@ -168,6 +246,14 @@ fn run_core(request: &relay::protocol::Request) -> Result<std::process::Output, 
         }
         Action::Show => {
             command.arg("show");
+            if let Some(id) = request.change_id.as_deref() {
+                command.arg(id);
+            }
+            push_option(&mut command, "--root", request.root.as_deref());
+            push_option(&mut command, "--state-dir", request.state_dir.as_deref());
+        }
+        Action::Discard => {
+            command.arg("discard");
             if let Some(id) = request.change_id.as_deref() {
                 command.arg(id);
             }

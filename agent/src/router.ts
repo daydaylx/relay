@@ -7,10 +7,10 @@ const diagnosticRequest = /\b(fail|failed|failure|error|broken|crash|not working
 
 export function routeRequest(text: string): { route: Route; reason: string } {
   if (protectedRequest.test(text)) {
-    return { route: "BLOCKED", reason: "This request touches a protected system resource; Relay can inspect or plan it, but the agent will not send it for mutation." };
+    return { route: "INSPECT", reason: "This goal touches a protected resource. Continue read-only investigation; Relay Core will reject any protected mutation." };
   }
   if (developmentRequest.test(text)) {
-    return { route: "DEVELOPMENT_REQUIRED", reason: "This request needs a read-only backend that Relay Agent V1 does not provide." };
+    return { route: "INSPECT", reason: "This request may need an unsupported write backend. Inspect available state and explain the limit; do not invent a mutation tool." };
   }
   if (changeRequest.test(text)) {
     return { route: "RELAY_CHANGE", reason: "Supported system changes must be typed, planned and reviewed through Relay Core." };

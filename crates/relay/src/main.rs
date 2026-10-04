@@ -31,12 +31,13 @@ fn main() -> ExitCode {
 
 fn run(args: Vec<String>) -> Result<ExitCode, String> {
     let Some(command) = args.first().map(String::as_str) else {
-        return Err(usage().to_owned());
+        return launch_agent(&[]);
     };
     let rest = &args[1..];
     match command {
         "--help" | "help" => println!("{}", usage()),
         "--version" | "version" => println!("relay {}", env!("CARGO_PKG_VERSION")),
+        "agent" => return launch_agent(rest),
         "status" => status(rest)?,
         "generations" => list_generations(rest)?,
         "health" => health(rest)?,
@@ -66,6 +67,29 @@ fn run(args: Vec<String>) -> Result<ExitCode, String> {
         _ => return Err(format!("unknown command '{command}'\n{}", usage())),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn launch_agent(args: &[String]) -> Result<ExitCode, String> {
+    let configured = env::var_os("RELAY_AGENT_PATH").map(PathBuf::from);
+    let sibling = env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("relay-agent")))
+        .filter(|path| path.is_file());
+    let executable = configured
+        .or(sibling)
+        .unwrap_or_else(|| PathBuf::from("relay-agent"));
+    let status = std::process::Command::new(&executable)
+        .args(args)
+        .status()
+        .map_err(|_| {
+            format!(
+                "could not start Relay's optional Pi agent runtime ({})",
+                executable.display()
+            )
+        })?;
+    Ok(ExitCode::from(
+        status.code().unwrap_or(1).clamp(0, 255) as u8
+    ))
 }
 
 // ------------------------------------------------------------------ argument parsing
@@ -335,11 +359,12 @@ fn diagnose(args: &[String]) -> Result<(), String> {
         "bluetooth" => diagnostics.bluetooth_json(),
         "hardware" => diagnostics.hardware_json(),
         "processes" => diagnostics.processes_json(parsed.one("--filter")?.unwrap_or(""))?,
+        "package" => diagnostics.package_json(parsed.one("--filter")?.unwrap_or(""))?,
         "journal" => diagnostics.journal_json(parsed.one("--unit")?, limit)?,
         "desktop" => diagnostics.desktop_json(),
         _ => {
             return Err(
-                "--topic must be network, bluetooth, hardware, processes, journal, or desktop"
+                "--topic must be network, bluetooth, hardware, processes, package, journal, or desktop"
                     .into(),
             );
         }
@@ -796,7 +821,7 @@ fn usage() -> &'static str {
     "usage: relay status [--root PATH] [--flake PATH] [--state-dir DIR]
        relay generations [--root PATH]
        relay health
-       relay diagnose --topic network|bluetooth|hardware|processes|journal [--filter NAME] [--unit UNIT] [--limit N]
+       relay diagnose --topic network|bluetooth|hardware|processes|package|journal|desktop [--filter NAME] [--unit UNIT] [--limit N]
        relay <index-options|index-packages> --flake PATH --host HOST --output PATH
        relay <search-option|search-package> <QUERY> --index PATH --flake PATH --host HOST [--root PATH]
        relay check <add-package|remove-package> <PACKAGE>

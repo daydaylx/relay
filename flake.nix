@@ -8,11 +8,22 @@
       systems = [ "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in {
-      packages = forAllSystems (pkgs: rec {
-        relay = pkgs.callPackage ./nix/package.nix { };
-        agent = pkgs.callPackage ./nix/agent-package.nix { };
-        default = relay;
-      });
+      packages = forAllSystems (pkgs:
+        let
+          relay = pkgs.callPackage ./nix/package.nix { };
+          agent = pkgs.callPackage ./nix/agent-package.nix { inherit relay; };
+        in {
+          core = relay;
+          inherit relay agent;
+          default = pkgs.symlinkJoin {
+            name = "relay-with-agent";
+            paths = [ relay agent ];
+            meta = {
+              description = "Relay NixOS system control tool with the optional Pi agent runtime";
+              mainProgram = "relay";
+            };
+          };
+        });
 
       apps = forAllSystems (pkgs: {
         default = {
@@ -32,14 +43,16 @@
       });
 
       checks = forAllSystems (pkgs:
-        let relay = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        let
+          relay = self.packages.${pkgs.stdenv.hostPlatform.system}.relay;
+          agent = self.packages.${pkgs.stdenv.hostPlatform.system}.agent;
         in {
           # Builds the package and runs its unit and simulator tests.
           package = relay;
           # Real activation and recovery inside a NixOS VM; never touches the host system.
           activation = pkgs.callPackage ./nix/tests/activation.nix {
             inherit relay;
-            agent = self.packages.${pkgs.stdenv.hostPlatform.system}.agent;
+            inherit agent;
           };
         });
     };

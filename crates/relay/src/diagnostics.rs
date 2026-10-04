@@ -173,6 +173,27 @@ impl Diagnostics {
         )
     }
 
+    pub fn package_json(&self, name: &str) -> Result<String, String> {
+        if name.is_empty()
+            || name.len() > 128
+            || !name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "-+_.".contains(character))
+            || name.starts_with('.')
+        {
+            return Err("package executable name is invalid".to_owned());
+        }
+        let executable = self.root.join("run/current-system/sw/bin").join(name);
+        let available = fs::metadata(executable)
+            .map(|metadata| metadata.is_file() && is_executable(&metadata))
+            .unwrap_or(false);
+        Ok(format!(
+            "{{\"name\":{},\"available\":{}}}",
+            crate::json_string(name),
+            available
+        ))
+    }
+
     pub fn hardware_json(&self) -> String {
         let cpuinfo = fs::read_to_string(self.root.join("proc/cpuinfo")).unwrap_or_default();
         let cpu_facts = cpuinfo
@@ -321,7 +342,8 @@ impl Diagnostics {
         Ok(format!("{{\"processes\":[{}]}}", processes.join(",")))
     }
 
-    /// Journal metadata intentionally excludes MESSAGE and all other free-form fields.
+    /// Read log messages only inside this process to classify a fixed, secret-free error category.
+    /// Raw MESSAGE values are never serialized, logged or returned to an agent.
     pub fn journal_json(&self, unit: Option<&str>, limit: usize) -> Result<String, String> {
         if let Some(unit) = unit {
             validate_unit_name(unit)?;
@@ -333,7 +355,7 @@ impl Diagnostics {
                 "--boot=0",
                 "--priority=warning",
                 "--output=json",
-                "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,PRIORITY,MESSAGE_ID",
+                "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,PRIORITY,MESSAGE_ID,MESSAGE",
                 "--no-pager",
                 "--quiet",
                 "--lines",
@@ -391,8 +413,13 @@ impl Diagnostics {
                 .get("MESSAGE_ID")
                 .and_then(Json::as_str)
                 .filter(|s| s.len() <= 64 && s.bytes().all(|b| b.is_ascii_hexdigit()));
+            let message_kind = value
+                .get("MESSAGE")
+                .and_then(Json::as_str)
+                .map(classify_journal_message)
+                .unwrap_or("other");
             records.push(format!(
-                "{{\"timestamp_usec\":{},\"unit\":{},\"priority\":{},\"message_id\":{}}}",
+                "{{\"timestamp_usec\":{},\"unit\":{},\"priority\":{},\"message_id\":{},\"message_kind\":{}}}",
                 if timestamp.is_empty() {
                     "null".to_owned()
                 } else {
@@ -405,7 +432,8 @@ impl Diagnostics {
                     .unwrap_or_else(|| "null".into()),
                 message_id
                     .map(crate::json_string)
-                    .unwrap_or_else(|| "null".into())
+                    .unwrap_or_else(|| "null".into()),
+                crate::json_string(message_kind)
             ));
         }
         Ok(format!(
@@ -422,14 +450,88 @@ impl Diagnostics {
         let Ok(summary) = ipc.summary() else {
             return "{\"available\":false}".into();
         };
+        let monitors = summary.monitors.iter().filter(|monitor| {
+            !monitor.name.is_empty()
+                && monitor.name.len() <= 64
+                && monitor.name.chars().all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+                && monitor.refresh_hz.is_finite()
+                && (0.0..=1000.0).contains(&monitor.refresh_hz)
+        }).map(|monitor| format!(
+            "{{\"name\":{},\"width\":{},\"height\":{},\"refresh_hz\":{},\"focused\":{},\"disabled\":{}}}",
+            crate::json_string(&monitor.name), monitor.width, monitor.height, monitor.refresh_hz,
+            monitor.focused, monitor.disabled
+        )).collect::<Vec<_>>().join(",");
+        let workspaces = summary
+            .workspaces
+            .iter()
+            .filter(|workspace| {
+                workspace.name.len() <= 64
+                    && workspace.monitor.len() <= 64
+                    && workspace
+                        .name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "_.:+-".contains(c))
+                    && workspace
+                        .monitor
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+            })
+            .map(|workspace| {
+                format!(
+                    "{{\"id\":{},\"name\":{},\"monitor\":{},\"windows\":{}}}",
+                    workspace.id,
+                    crate::json_string(&workspace.name),
+                    crate::json_string(&workspace.monitor),
+                    workspace.windows
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
-            "{{\"available\":true,\"version\":{},\"monitor_count\":{},\"workspace_count\":{},\"window_count\":{}}}",
+            "{{\"available\":true,\"version\":{},\"monitor_count\":{},\"workspace_count\":{},\"window_count\":{},\"monitors\":[{}],\"workspaces\":[{}]}}",
             crate::json_string(&summary.version),
             summary.monitors.len(),
             summary.workspaces.len(),
-            summary.window_count
+            summary.window_count,
+            monitors,
+            workspaces,
         )
     }
+}
+
+fn classify_journal_message(message: &str) -> &'static str {
+    let message = message.to_ascii_lowercase();
+    if message.contains("permission denied") || message.contains("operation not permitted") {
+        "permission_denied"
+    } else if message.contains("no such file") || message.contains("not found") {
+        "missing_resource"
+    } else if message.contains("connection refused") {
+        "connection_refused"
+    } else if message.contains("address already in use") || message.contains("address in use") {
+        "address_conflict"
+    } else if message.contains("out of memory") || message.contains("oom-kill") {
+        "memory_pressure"
+    } else if message.contains("timed out") || message.contains("timeout") {
+        "timeout"
+    } else if message.contains("segfault") || message.contains("segmentation fault") {
+        "process_crash"
+    } else if message.contains("failed") || message.contains("failure") || message.contains("error")
+    {
+        "service_error"
+    } else {
+        "other"
+    }
+}
+
+#[cfg(unix)]
+fn is_executable(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_: &fs::Metadata) -> bool {
+    false
 }
 
 fn read_trimmed(path: &Path) -> Option<String> {
@@ -476,16 +578,16 @@ mod tests {
         fn run(&self, invocation: &Invocation) -> Result<Outcome, String> {
             assert_eq!(invocation.program(), "journalctl");
             assert!(invocation.arguments().iter().any(|arg| arg
-                == "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,PRIORITY,MESSAGE_ID"));
+                == "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,PRIORITY,MESSAGE_ID,MESSAGE"));
             assert!(
                 invocation
                     .arguments()
                     .iter()
-                    .all(|arg| !arg.contains("MESSAGE,"))
+                    .all(|arg| !arg.contains("MESSAGE,MESSAGE"))
             );
             Ok(Outcome {
                 code: Some(0),
-                stdout: br#"{"__REALTIME_TIMESTAMP":"1730000000000000","_SYSTEMD_UNIT":"nginx.service","PRIORITY":"3","MESSAGE_ID":"abcd","MESSAGE":"private-token"}"#.to_vec(),
+                stdout: br#"{"__REALTIME_TIMESTAMP":"1730000000000000","_SYSTEMD_UNIT":"nginx.service","PRIORITY":"3","MESSAGE_ID":"abcd","MESSAGE":"connection refused private-token"}"#.to_vec(),
                 stderr: Vec::new(),
             })
         }
@@ -516,6 +618,7 @@ mod tests {
         assert!(output.contains("\"priority\":3"));
         assert!(!output.contains("private-token"));
         assert!(!output.contains("MESSAGE"));
+        assert!(output.contains("connection_refused"));
     }
 
     #[test]

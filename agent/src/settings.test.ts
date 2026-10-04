@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { configPath, initializeConfig, loadConfig } from "./settings.js";
+import { configPath, initializeConfig, loadConfig, relayRuntimeConfigDirectory } from "./settings.js";
 
 test("Relay settings come from Relay's config path and ignore a Pi profile", () => {
   const dir = mkdtempSync(join(tmpdir(), "relay-agent-config-"));
@@ -47,4 +47,20 @@ test("invalid config and model selectors fail closed", () => {
     else process.env.RELAY_AGENT_CONFIG = previous;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Relay Pi runtime config avoids a personal Pi directory used as XDG_CONFIG_HOME", () => {
+  const userHome = "/home/alice";
+  assert.equal(
+    relayRuntimeConfigDirectory(join(userHome, ".pi", "agent"), userHome),
+    join(userHome, ".config", "relay"),
+  );
+});
+
+test("Relay Pi runtime config honors an independent absolute XDG_CONFIG_HOME", () => {
+  const userHome = "/home/alice";
+  assert.equal(
+    relayRuntimeConfigDirectory(join(userHome, ".config", "custom"), userHome),
+    join(userHome, ".config", "custom", "relay"),
+  );
 });

@@ -260,7 +260,7 @@ testers.runNixOSTest {
             agent_check = machine.succeed("sudo -u alice -H ${agent}/bin/relay-agent --check")
             agent_data = json.loads(agent_check)
             assert agent_data["piConfigLoaded"] is False, agent_data
-            assert agent_data["modelCanApply"] is False, agent_data
+            assert agent_data["modelCanApplyWithoutLocalConfirmation"] is False, agent_data
             assert "relay_diagnose" in agent_data["tools"], agent_data
             machine.fail("test -e /home/alice/.pi")
 

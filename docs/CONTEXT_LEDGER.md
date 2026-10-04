@@ -4,13 +4,17 @@
 
 Relay ist ein eigenständiges, NixOS-orientiertes Systemwerkzeug. NixOS bleibt die Source of Truth;
 Relay übersetzt Nutzerabsichten in sichere, strukturierte Konfigurationsänderungen und kann sie
-nachvollziehbar prüfen, aktivieren und wiederherstellen. Relay ist kein Pi-Fork, Coding-Agent,
-allgemeiner Root-Agent oder Shell-Wrapper mit LLM.
+nachvollziehbar prüfen, aktivieren und wiederherstellen. Für natürliche Sprache bettet Relay
+ausgewählte Pi-Agent-Runtime-Komponenten ein; es ist kein Pi-Fork, Coding-Agent, allgemeiner Root-Agent
+oder Shell-Wrapper mit LLM.
 
 ## Bestätigte Architekturentscheidungen
 
 - Der deterministische Systemkern funktioniert ohne KI. KI ist optional, liefert nur strukturierte
   Intents und ist nie die Sicherheitsgrenze.
+- Pi-Komponenten kommen ausschließlich aus den exakt versionierten Repository-Abhängigkeiten. Keine
+  Vermischung mit persönlichem Pi-Setup, `~/.pi`, lokalen Profilen, Prompts, Sessions, Extensions,
+  Einstellungen oder Credentials.
 - PLAN- und Read-Operationen mutieren das System nicht. Ein Plan legt nur Relay-eigenen State an
   (Journal, Plan-Record, Kandidatenkopie) und fügt dem Nix-Store Kandidaten hinzu.
 - Nix/NixOS-Kommandokonstruktion gehört in einen Adapter (`nix.rs`). Strukturierte Ausgaben sind
@@ -43,6 +47,10 @@ Remote-Funktionen sind im MVP ausgeschlossen, sofern nicht später ausdrücklich
 - T5 Natural Language Layer — umgesetzt (`relay ask`, Provider als Adapter, Modell nur Vorschlag; ADR 0007).
   T6 Desktop — umgesetzt als read-only Hyprland-IPC plus Desktop-Gate in `apply` (ADR 0008).
   Live-APIs der Provider wurden nie aufgerufen; Steuerung des Kompositors ist nicht Teil davon.
+- T7 Agent Task Runtime — erste integrierte Version mit Task-Journal, Pi Tool-Loop, lokaler
+  Mutationbestätigung und strukturierten Goal-Verifikationen. Verifikation deckt momentan Bluetooth,
+  konkreten Dienst, Systemgesundheit und Paketverfügbarkeit ab. Live-TUI/Provider-Pilot und weitere
+  Ziele (MIME-Defaults, Monitorlayout, Generationenbereinigung) bleiben offen (ADR 0010).
 
 ## Qualitäts- und Prüfregeln
 

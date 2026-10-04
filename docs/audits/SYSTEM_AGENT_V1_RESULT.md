@@ -1,5 +1,10 @@
 # Relay System Agent V1 – Ergebnis
 
+> Historischer Audit der ersten Agent-Version. Die damalige separate Frontend-Architektur wurde mit
+> ADR 0010 durch die eingebettete Task-Runtime ersetzt. Für den aktuellen Stand siehe
+> [`PROJECT_STATUS.md`](../../PROJECT_STATUS.md) und
+> [`08_AGENT_TASK_RUNTIME.md`](../architecture/08_AGENT_TASK_RUNTIME.md).
+
 Stand: 2026-10-03. Diese Umsetzung ergänzt den Rust-Core um einen optionalen, lokalen
 Original-Pi-Frontend-Prototyp. Sie erfüllt noch nicht alle Abnahmekriterien aus dem Master-Auftrag;
 offene Gates sind unten ausdrücklich markiert.

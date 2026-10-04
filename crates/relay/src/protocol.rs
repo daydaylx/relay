@@ -14,8 +14,11 @@ pub enum Action {
     Units,
     Generations,
     Diagnose,
+    SearchOption,
+    SearchPackage,
     Plan,
     Show,
+    Discard,
     Apply,
     UndoPreview,
     Undo,
@@ -31,8 +34,11 @@ impl Action {
             Self::Units => "units",
             Self::Generations => "generations",
             Self::Diagnose => "diagnose",
+            Self::SearchOption => "search_option",
+            Self::SearchPackage => "search_package",
             Self::Plan => "plan",
             Self::Show => "show",
+            Self::Discard => "discard",
             Self::Apply => "apply",
             Self::UndoPreview => "undo_preview",
             Self::Undo => "undo",
@@ -62,6 +68,7 @@ pub struct Request {
     pub unit_limit: usize,
     pub diagnostic_topic: Option<String>,
     pub diagnostic_unit: Option<String>,
+    pub query: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,8 +146,11 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         "units" => Action::Units,
         "generations" => Action::Generations,
         "diagnose" => Action::Diagnose,
+        "search_option" => Action::SearchOption,
+        "search_package" => Action::SearchPackage,
         "plan" => Action::Plan,
         "show" => Action::Show,
+        "discard" => Action::Discard,
         "apply" => Action::Apply,
         "undo_preview" => Action::UndoPreview,
         "undo" => Action::Undo,
@@ -164,8 +174,10 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         Action::Units => &["filter", "limit"],
         Action::Generations => &["root"],
         Action::Diagnose => &["root", "topic", "filter", "unit", "limit"],
+        Action::SearchOption | Action::SearchPackage => &["flake", "host", "query", "limit"],
         Action::Plan => &["root", "flake", "host", "state_dir", "intent"],
         Action::Show => &["root", "state_dir", "change_id"],
+        Action::Discard => &["root", "state_dir", "change_id"],
         Action::Apply => &[
             "root",
             "state_dir",
@@ -263,7 +275,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
     if diagnostic_topic.as_deref().is_some_and(|topic| {
         !matches!(
             topic,
-            "network" | "bluetooth" | "hardware" | "processes" | "journal" | "desktop"
+            "network" | "bluetooth" | "hardware" | "processes" | "journal" | "desktop" | "package"
         )
     }) {
         return Err(RequestError::invalid(
@@ -272,16 +284,30 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         ));
     }
     let diagnostic_unit = read_name("unit", 128)?;
+    let query = read_name("query", 128)?;
     if action == Action::Diagnose {
+        if diagnostic_topic.as_deref() == Some("package")
+            && (unit_filter.is_empty() || unit_filter.starts_with('.'))
+        {
+            return Err(RequestError::invalid(
+                Some(id.clone()),
+                "package diagnostics require a safe executable name",
+            ));
+        }
         if let Some(unit) = diagnostic_unit.as_deref() {
             validate_unit_name(unit).map_err(|_| {
                 RequestError::invalid(Some(id.clone()), "diagnostic unit is invalid")
             })?;
         }
-        if unit_filter.len() > 64
+        let max_filter_len = if diagnostic_topic.as_deref() == Some("package") {
+            128
+        } else {
+            64
+        };
+        if unit_filter.len() > max_filter_len
             || !unit_filter
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
+                .all(|c| c.is_ascii_alphanumeric() || "_.-+".contains(c))
         {
             return Err(RequestError::invalid(
                 Some(id.clone()),
@@ -290,7 +316,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         }
         if diagnostic_topic
             .as_deref()
-            .is_some_and(|topic| topic != "processes")
+            .is_some_and(|topic| !matches!(topic, "processes" | "package"))
             && !unit_filter.is_empty()
         {
             return Err(RequestError::invalid(
@@ -422,7 +448,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
     };
     let required = match action {
         Action::Plan => flake.is_some() && host.is_some() && intent_json.is_some(),
-        Action::Show | Action::Apply | Action::Undo => change_id.is_some(),
+        Action::Show | Action::Discard | Action::Apply | Action::Undo => change_id.is_some(),
         Action::Recover => params.contains_key("expected_ids") && !expected_ids.is_empty(),
         Action::UndoPreview
         | Action::RecoverPreview
@@ -431,6 +457,9 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         | Action::Units
         | Action::Generations => true,
         Action::Diagnose => diagnostic_topic.is_some(),
+        Action::SearchOption | Action::SearchPackage => {
+            flake.is_some() && host.is_some() && query.is_some()
+        }
     };
     if !required {
         return Err(RequestError::invalid(
@@ -457,6 +486,7 @@ pub fn parse_request(input: &str) -> Result<Request, RequestError> {
         unit_limit,
         diagnostic_topic,
         diagnostic_unit,
+        query,
     })
 }
 
@@ -492,6 +522,27 @@ mod tests {
         assert_eq!(request.action, Action::Plan);
         assert_eq!(request.host.as_deref(), Some("nixos"));
         assert!(request.intent_json.unwrap().contains("add_package"));
+    }
+
+    #[test]
+    fn option_and_package_search_are_typed_bounded_read_actions() {
+        let option = parse_request(r#"{"schema_version":1,"id":"o","action":"search_option","params":{"flake":"/etc/nixos","host":"nixos","query":"hardware.bluetooth","limit":5}}"#).unwrap();
+        assert_eq!(option.action, Action::SearchOption);
+        assert_eq!(option.query.as_deref(), Some("hardware.bluetooth"));
+        assert_eq!(option.unit_limit, 5);
+        assert!(!option.confirmed);
+
+        let package = parse_request(r#"{"schema_version":1,"id":"p","action":"search_package","params":{"flake":"/etc/nixos","host":"nixos","query":"video player"}}"#).unwrap();
+        assert_eq!(package.action, Action::SearchPackage);
+        assert_eq!(package.unit_limit, 50);
+
+        for input in [
+            r#"{"schema_version":1,"id":"x","action":"search_option","params":{"host":"nixos","query":"bluetooth"}}"#,
+            r#"{"schema_version":1,"id":"x","action":"search_package","params":{"flake":"/etc/nixos","host":"nixos","query":""}}"#,
+            r#"{"schema_version":1,"id":"x","action":"search_package","params":{"flake":"/etc/nixos","host":"nixos","query":"vlc","limit":101}}"#,
+        ] {
+            assert_eq!(parse_request(input).unwrap_err().code, "invalid_request");
+        }
     }
 
     #[test]

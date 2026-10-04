@@ -43,21 +43,29 @@ Anfrage → Hinweise aus dem lokalen Index → Prompt (deterministisch, ohne Wer
 - Ohne Provider, ohne Netz oder bei Fehlern ändert sich nichts; alle anderen Befehle sind
   unberührt.
 
-## Interaktiver Pi Agent (optional)
+## Eingebettete Pi Agent Runtime (optional)
 
-`nix run .#agent` startet einen eigenen TypeScript-Prozess mit Original-Pi `pi-agent-core`, `pi-ai`
-und `pi-tui`. Er liest weder `~/.pi` noch Projektprompts oder Extensions. Die eigene Konfiguration
-liegt in `~/.config/relay/agent.json`. Der Rust-Core bleibt ohne Node und Pi vollständig nutzbar.
+Relay bettet ausgewählte, exakt versionierte Pakete von Pi für Agent Loop, Provider/Streaming und
+TUI ein. Das ist eine Runtime-Komponente von Relay, kein Zugriff auf ein separates Pi-Produkt. Sie
+lädt, liest, kopiert oder untersucht keine persönliche Pi-Installation, `~/.pi`, Profile, Prompts,
+Extensions, Sessions, Einstellungen oder Credentials. Relay-Konfiguration liegt separat unter
+`~/.config/relay/agent.json`. Der Rust-Core bleibt ohne Node, Pi und Provider vollständig nutzbar.
 
-Der Agent spricht mit `relay protocol --stdio` über schema-versionierte JSON-Zeilen. Seine
-Modellwerkzeuge sind `relay_system_status`, `relay_system_health`, `relay_list_units`,
-`relay_plan_change` und `relay_show_plan`. Vollständige Preview-Werte werden lokal in der TUI
-gezeigt; dem Modell werden Diffs, Planwerte und Store-Pfade nicht zurückgegeben. Der Router ordnet
-Anfragen vor dem Modellaufruf ein und hält bekannte geschützte sowie noch nicht unterstützte
-Backend-Anfragen lokal an. Core-Validierung bleibt unabhängig vom Router.
+Interaktive Nutzereingaben erzeugen persistierte Relay Tasks. Innerhalb eines Tasks ruft ein einzelner
+Pi Loop nacheinander strukturierte Relay-Tools auf: Beobachtung und Diagnose, Nix-Option-/Paket-Suche,
+begrenztes sicheres Lesen, typed Plan, Review, Discard, bestätigtes Apply/Undo/Recover und
+Goal-Verifikation. Beobachtung und Planung brauchen keine Rückfrage. Mutation pausiert den Toolaufruf,
+zeigt die Core-Vorschau lokal und benötigt eine direkte Bestätigung, die an Task, Aktion und Preview
+gebunden ist. Nach Apply kann derselbe Task weiterarbeiten. Nur eine passende strukturierte Core-
+Beobachtung kann den Task abschließen.
 
-Apply, Undo und Recover können Nutzer in der TUI direkt starten. Diese Aktionen sind keine
-Modellwerkzeuge und benötigen eine exakte, zielgebundene Bestätigung. Der Core prüft das Ziel unter
-seiner Änderungssperre erneut. Die Diagnoseoberfläche deckt bislang Status, Health und eine
-begrenzte systemd-Dienstliste ab; Journal-, Netzwerk-, Bluetooth-, Hardware- und Kontextabfragen
-sind noch offen. Siehe [`SYSTEM_AGENT_V1_RESULT.md`](../audits/SYSTEM_AGENT_V1_RESULT.md).
+Task-Ereignisse sind lokal append-only; Transkript und vollständige Logs werden nicht persistiert.
+Der Router liefert nur einen ersten Topic-Hinweis und ist keine Berechtigungsgrenze. Schreibschutz,
+Protected Resources, Drift, Risk, Recovery und Aktivierung bleiben Entscheidungen des Relay Core.
+Es gibt keine allgemeine Shell, keine willkürlichen Schreib- oder Root-Tools, Extensions, MCP,
+Codemode oder Subagenten. Details und Grenzen stehen in
+[`08_AGENT_TASK_RUNTIME.md`](08_AGENT_TASK_RUNTIME.md) und [`agent/README.md`](../../agent/README.md).
+
+Aktuell ist strukturierte Zielverifikation für Bluetooth-Bereitschaft, konkret benannte Dienste,
+Systemgesundheit und Paketverfügbarkeit implementiert. Ziele wie MIME-Defaults, Monitor-/Workspace-
+Layout oder Generationenbereinigung sind noch nicht verifizierbar und bleiben offen.

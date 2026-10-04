@@ -45,3 +45,28 @@ Switch Inhibitors dürfen nicht automatisch umgangen werden.
 
 - Der Zugriff auf den Kompositor ist rein lesend und auf eine feste Abfrageliste beschränkt;
   Fenstertitel werden nicht gelesen.
+
+## Pi Control Center (Zielarchitektur, gestufte Umsetzung)
+
+Die erste Pi-Task-Runtime hat keine allgemeine Shell, keine User-Datei-Transaktionen, kein MCP und
+keinen Webzugriff. Der erweiterte Auftrag fügt diese Fähigkeiten nicht unmittelbar frei, sondern
+ordnet sie einem gemeinsamen Rust Execution Gateway mit Relay-eigener SystemContext-, Ownership-,
+Policy- und Evidence-Schicht zu. Der [Baseline-Audit](../audits/RELAY_PI_CONTROL_CENTER_BASELINE.md)
+und ADR 0011–0022 sind Soll-Architektur; einzelne Fähigkeiten gelten erst nach ihrer Phase und ihren
+Security Tests als verfügbar.
+
+- Pi RPC ist eine Prozess-/API-Grenze, keine OS-Sandbox. Eingebaute Hosttools und MCP-Server werden
+  vor echter Sandbox-/Gateway-Prüfung nicht für allgemeine Host-Mutationen aktiviert.
+- Shells/Interpreter werden nicht anhand einer simplen Executable-Whitelist autorisiert. Policy
+  bewertet argv, cwd, env, redirections, file descriptors, resolved targets, ownership, privilege,
+  scope, erwartete Wirkung und Rücknehmbarkeit; Enforcement erfolgt zusätzlich per Linux OS-Grenze.
+- Managed Nix mutations bleiben exklusiv im bisherigen Candidate-/Safety-Core. Dateiänderungen laufen
+  nur nach Ownership-Auflösung durch File Transactions; Undo prüft After-Hash und schützt fremde Edits.
+- Root bleibt kurzlebig und operation-gebunden. Task-Grants erlauben nur freigegebene Klassen; Root,
+  unknown, secret und destructive actions verlangen eigene direkte Entscheidung oder bleiben blockiert.
+- Relay lädt niemals automatisch `~/.pi`, User-/Projektprompts, Pi Skills/Extensions/Packages/MCP oder
+  Pi Sessions. Relays eigene Runtime-/Session-/MCP-Pfade werden explizit isoliert.
+- Web-/MCP-/GitHub-/Datei-/Log-Antworten sind untrusted Daten. Fetch hat öffentliche HTTP(S)-Ziele,
+  SSRF-Schutz und Limits; Credentials/Cookies gehen nicht in Knowledge-Abfragen.
+- Keine Task wird anhand eines Exitcodes oder Modelltexts abgeschlossen. Desired State wird mit frischen,
+  strukturierten Observations verglichen und Evidence/Action-IDs belegen die Resultate.

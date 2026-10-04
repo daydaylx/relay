@@ -2,13 +2,13 @@
 
 ## Project identity
 
-Relay is a standalone NixOS-first system control tool.
+Relay is an independent NixOS-first system control tool with an optional embedded Pi agent
+runtime for natural-language task investigation and orchestration.
 
 It is **not**:
-- a coding-agent fork,
-- a Pi derivative,
+- a fork of the Pi coding-agent product,
 - a generic autonomous root agent,
-- a shell wrapper with an LLM attached.
+- a shell wrapper with unrestricted LLM access.
 
 The system core must remain deterministic, testable, recoverable and usable without AI.
 
@@ -36,8 +36,10 @@ Intent
 ## Hard architecture rules
 
 1. NixOS is the source of truth.
-2. Relay may automatically write only inside its explicit managed boundary.
-3. The LLM never writes arbitrary Nix code directly.
+2. NixOS configuration writes remain inside the explicit managed boundary. User-file writes are
+   forbidden until the Ownership Map and File Transaction Layer authorize a concrete target.
+3. Pi never writes arbitrary Nix code directly. It uses the typed Relay Core for managed system
+   changes and the Execution Gateway for other policy-approved operations.
 4. AI is optional and never the security boundary.
 5. PLAN/read operations must not mutate the system.
 6. Every mutation requires:
@@ -53,7 +55,9 @@ Intent
 12. Secrets must not enter the Nix store, normal logs, change journal or AI context.
 13. No permanent root process.
 14. No generic root shell exposed to the model.
-15. Do not add subagents, MCP, plugin systems or remote management to the MVP.
+15. Do not add subagents, Rabbitmode, remote administration, cloud daemons or multi-user server
+    operation to this scope. Relay-owned MCP and web read access are part of the Knowledge Broker
+    architecture, subject to Trust Classes and the Execution Gateway; never import personal Pi config.
 
 ## Protected resources for MVP
 

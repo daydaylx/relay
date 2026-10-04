@@ -1,6 +1,6 @@
 # ADR 0009 – Optionaler Agent auf Original-Pi-Bausteinen
 
-Status: Accepted
+Status: Superseded by ADR 0010
 
 ## Kontext
 
@@ -13,7 +13,7 @@ Der System-Agent-Auftrag vom 2026-10-03 verlangt einen eigenständigen conversat
 während die bestehenden Projektregeln verbieten, die Sicherheitsgrenze in ein Modell oder
 einen Coding-Agenten zu verlagern.
 
-## Entscheidung
+## Ursprüngliche Entscheidung
 
 - Relay bleibt ein eigenständiges Systemprodukt. Der optionale Agent ist ein Frontend und
   keine Core-Abhängigkeit. `relay` und alle sicherheitskritischen Abläufe bleiben ohne Node,
@@ -81,3 +81,7 @@ Geprüft am 2026-10-03:
 - [Pi Paketübersicht](https://github.com/earendil-works/pi): Paketgrenzen, Node-Anforderung
   und Aussage, dass Pi keine eingebaute Permission-Sandbox besitzt.
 - npm Registry: `pi-agent-core@1.0.0`, `pi-ai@1.0.0`, `pi-tui@1.0.0`.
+
+Diese Entscheidung beschrieb den ersten separaten Frontend-Prototyp. Die Zielarchitektur mit
+integriertem Task-Lebenszyklus, Relay-Agent-Tools und Bestätigung im laufenden Agent-Task steht in
+[ADR 0010](0010-agent-task-runtime.md).

@@ -2,13 +2,22 @@
 
 ## Current phase
 
-**MVP implemented (T1–T4), plus the optional natural-language layer (T5) and read-only Hyprland integration (T6).**
+**MVP implemented (T1–T4), plus the optional natural-language layer (T5), read-only Hyprland
+integration (T6), Pi RPC task runtime and first SystemContext (T7 / migration phases 1–2).**
 
-An optional Pi-based system-agent front end is implemented in `agent/` (T7 integration in progress). It has a
-versioned Core bridge, local request router, structured read-only diagnostics, a 20-question route
-regression, plan review, and user-confirmed apply/undo/recovery flows. The final Core bridge and shared
-confirmation gate passed the NixOS VM check on 2026-10-03. Interactive provider use, usability review
-and the real-system deployment remain open; see [`docs/audits/SYSTEM_AGENT_V1_RESULT.md`](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
+The optional runtime in `agent/` uses exact project dependencies and starts one isolated Pi RPC session
+per task. Relay tools are exposed through a task-scoped extension and private Unix socket. A verified
+SystemContext is added to the Pi system prompt and persisted in the task journal. The runtime has
+persisted Task state, safe bounded reads, plan/review, locally confirmed Core mutations and structured
+verification for limited goals. It never loads, reads, copies or inspects the user's personal Pi setup.
+Rust Core remains independently usable and owns all system mutations. A live provider session,
+usability pilot and real-system deployment remain open. See [the runtime architecture](docs/architecture/08_AGENT_TASK_RUNTIME.md)
+and [the audit](docs/audits/SYSTEM_AGENT_V1_RESULT.md).
+
+The expanded target also includes an initial SystemContext; automatic Ownership Map, OBSERVE
+Execution Gateway, file transactions, full Desired State, versioned Knowledge, MCP/Web and a Privilege
+Broker remain open. No generic host-mutating Bash, MCP, Web fetch or User Config write is enabled.
+See the staged gates in [`docs/planning/09_CONTROL_CENTER_MIGRATION.md`](docs/planning/09_CONTROL_CENTER_MIGRATION.md).
 
 Relay observes the system, plans a typed change in an isolated candidate, evaluates and builds it,
 shows diff/risk/preview, applies it with `test` → health → `switch` (or `boot` for reboot-class
@@ -37,7 +46,7 @@ not switched the system generation. Real Relay activation was only ever exercise
 | T4 Recoverable MVP | done (VM + simulator) | history, undo (source + runtime), recovery from crash at every step, pending-change detection, AI-independent. Pflichtszenarien: Bluetooth/option, VLC add, VLC remove, undo last change, failed change detected and rolled back. |
 | T5 Natural language | done (core + fakes; not live) | `relay ask`: strict proposal schema, index cross-check, isolated candidate, typed confirmation (`--yes` refused), providers `command`, `openai` (also Ollama/local), `anthropic` via `curl` with the key only on stdin. Tests: hostile and malformed model output, AI unavailable, key never in arguments/Debug, fake-`curl` request shapes; a real `ask` → plan against real Nix with a command provider; VM subtest. **The hosted APIs (OpenAI, Anthropic) were never called live.** |
 | T6 Desktop | done (read-only) | `relay desktop status/health` and `status.desktop` against a real Hyprland 0.55.4 session; fixed allow-list of read-only queries (a test forbids `dispatch`/`keyword`/`reload`/`exec`); desktop gate in `apply` proven in the simulator and against a fake socket. No compositor in the VM. |
-| T7 Pi system agent | implementation in progress | Separate Original-Pi package, dedicated config path, versioned protocol, inspect/diagnose/router/plan tools and local confirmation for apply/undo/recover. Structured network/Bluetooth/hardware/process/journal/desktop diagnostics and a 20-question regression are implemented. Node CI and a real-Core confirmation workflow in the NixOS VM are covered. Interactive provider use and usability review remain open; deployment on a real host is not an activation test. |
+| T7 Pi task runtime | RPC runtime and tool bridge implemented; bounded-goal pilot open | Exact-pinned Pi RPC process per task; only Relay task extension; private Unix socket; tool-call limits/journal; SystemContext in prompt and Task journal. Typed plan/show/discard/apply/undo/recover still require exact local confirmation. Supported checks: Bluetooth readiness, named service activity, system health and package availability. Automated Pi startup/extension/bridge and fake-Core workflow tests pass; live provider/TUI usability and real-host activation remain open. |
 
 ## Test status
 
@@ -52,9 +61,9 @@ runs the tests in the sandbox. The VM check passed on 2026-10-03 on the developm
 - **Live activation** is not validated on this machine. The development policy is to test activation
   and recovery in the NixOS VM, not on the daily-driver system. A real-system change needs a separate
   reviewed deployment decision after the source drift is resolved.
-- **Agent VM workflow** is implemented for the real Relay executable and confirmation gate across
-  plan, show, apply, undo, preview and recovery of an abandoned built candidate. The final VM run
-  passed on 2026-10-03. It does not launch Pi's interactive TUI or contact a hosted model provider.
+- **Agent provider/TUI workflow** uses fake Pi model streams and a fake Core bridge in TypeScript
+  tests. The isolated NixOS VM checks the real Core mutation/recovery boundary but does not start the
+  Pi TUI or contact a hosted model provider.
 - **Reboot verification** after a real reboot is covered by the simulator, not by the VM (the test VM
   boots directly into its kernel and has no bootloader to select the new generation).
 - **Bootloader installation** is part of `switch`/`boot`. A bootloader failure after a successful
@@ -73,7 +82,7 @@ runs the tests in the sandbox. The VM check passed on 2026-10-03 on the developm
   terminal. A hard kill of Relay can leave a `switch-to-configuration` child holding NixOS' lock;
   `relay recover` then reports an incomplete rollback and can be repeated.
 - **Option defaults** in the options index remain `null` (forcing arbitrary defaults can fail).
-- **AI providers** were exercised through fakes only; model quality (will it propose valid names?) is
+- **AI providers** in both paths were exercised through fakes only; model quality (will it propose valid names?) is
   unmeasured. Text sent to a provider is exactly `relay ask --show-prompt`; `--explain` also sends the
   review (diff, store paths).
 - **Desktop**: control of the compositor (dispatch, keyword, reload) and dotfile management stay out of
@@ -85,7 +94,7 @@ runs the tests in the sandbox. The VM check passed on 2026-10-03 on the developm
 
 - Product name: Relay
 - Target: NixOS-first
-- Runtime: standalone Rust core plus optional standalone Pi frontend, AI: optional
+- Runtime: standalone Rust Core plus optional embedded Pi Agent runtime, AI: optional
 - Language: Rust (std only), config backend: flake (later: `system.nix`)
 - Managed write boundary: `relay/managed.nix`
 - Candidate isolation by tree copy and strict canonical module (ADR 0005); typed privileges and

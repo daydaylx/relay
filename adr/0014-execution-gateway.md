@@ -1,6 +1,6 @@
 # ADR 0014 – Gemeinsames Execution Gateway
 
-Status: Accepted for implementation
+Status: Accepted; typed Relay-protocol classifier and confirmation gate implemented, broad gateway pending
 
 ## Entscheidung
 
@@ -21,3 +21,9 @@ Nutzer zurückgegeben. Der NixOS Safety Core bleibt unverändert zuständig für
 
 Pi Toolannotations und Shell-Parsergebnisse sind Hinweise, keine Autorisierung. Alle Adapter und MCP
 Calls müssen Gateway IDs/Evidence referenzieren; direkte Tool-zu-System-Ausführung ist unzulässig.
+
+Der erste Implementierungsschritt klassifiziert jede feste Protokollaktion (`READ_ONLY`, `PLANNING`,
+Relay-State-Mutation oder managed Systemänderung) und prüft eine direkte Bestätigung für Apply/Undo/
+Recovery unmittelbar vor dem Dispatch. Das ist noch kein allgemeines Execution Gateway: ausführbare
+Programme, cwd, Env, Dateiziele, Sandbox-Profile, Process-Tree-Limits, Evidence-Journal und MCP-Aufrufe
+sind noch nicht in dieses Modell aufgenommen. Beliebige Shell- und Prozessaufrufe bleiben gesperrt.

@@ -79,6 +79,13 @@ fn read_line_limited<R: BufRead>(
 }
 
 fn dispatch(request: &relay::protocol::Request) -> String {
+    if relay::execution::authorize(request).is_err() {
+        return error_response(
+            Some(&request.id),
+            "confirmation_required",
+            "a direct user confirmation is required by the Relay execution gateway",
+        );
+    }
     if matches!(request.action, Action::SearchOption | Action::SearchPackage) {
         return search_nix(request);
     }
@@ -342,8 +349,33 @@ fn push_option(command: &mut Command, name: &str, value: Option<&str>) {
 
 #[cfg(test)]
 mod tests {
-    use super::read_line_limited;
+    use super::{dispatch, read_line_limited};
+    use relay::protocol::{Action, Request};
     use std::io::Cursor;
+
+    fn request(action: Action, confirmed: bool) -> Request {
+        Request {
+            id: "gateway-test".into(),
+            action,
+            root: None,
+            flake: None,
+            host: None,
+            state_dir: None,
+            change_id: None,
+            intent_json: None,
+            confirmed,
+            abort_pending: false,
+            no_desktop_check: false,
+            observe_seconds: None,
+            expect_active: Vec::new(),
+            expected_ids: Vec::new(),
+            unit_filter: String::new(),
+            unit_limit: 20,
+            diagnostic_topic: None,
+            diagnostic_unit: None,
+            query: None,
+        }
+    }
 
     #[test]
     fn bounded_line_reader_drains_oversized_records_and_continues() {
@@ -354,5 +386,12 @@ mod tests {
         assert!(read_line_limited(&mut input, &mut line, 4).unwrap());
         assert_eq!(line, b"ok\n");
         assert!(!read_line_limited(&mut input, &mut line, 4).unwrap());
+    }
+
+    #[test]
+    fn execution_gateway_denies_unconfirmed_managed_action_before_spawning_core() {
+        let response = dispatch(&request(Action::Apply, false));
+        assert!(response.contains("\"code\":\"confirmation_required\""));
+        assert!(response.contains("execution gateway"));
     }
 }

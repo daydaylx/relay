@@ -7,6 +7,7 @@ mod change;
 pub mod diagnostics;
 mod engine;
 mod exec;
+pub mod execution;
 mod fsutil;
 mod health;
 mod host;
